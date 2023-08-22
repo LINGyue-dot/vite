@@ -52,7 +52,7 @@ export async function initDepsOptimizer(
   config: ResolvedConfig,
   server?: ViteDevServer,
 ): Promise<void> {
-  // Non Dev SSR Optimizer
+  // Non Dev SSR Optimizer config.command === server
   const ssr = config.command === 'build' && !!config.build.ssr
   if (!getDepsOptimizer(config, ssr)) {
     await createDepsOptimizer(config, server)
@@ -96,13 +96,13 @@ async function createDepsOptimizer(
   const ssr = isBuild && !!config.build.ssr // safe as Dev SSR don't use this optimizer
 
   const sessionTimestamp = Date.now().toString()
-
+  // 获取缓存
   const cachedMetadata = await loadCachedDepOptimizationMetadata(config, ssr)
 
   let debounceProcessingHandle: NodeJS.Timeout | undefined
 
   let closed = false
-
+  // 获取缓存或者生成缓存
   let metadata =
     cachedMetadata || initDepsOptimizerMetadata(config, ssr, sessionTimestamp)
 

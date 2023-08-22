@@ -339,7 +339,7 @@ export function addOptimizedDepInfo(
 let firstLoadCachedDepOptimizationMetadata = true
 
 /**
- * Creates the initial dep optimization metadata, loading it from the deps cache
+ * 获取缓存
  * if it exists and pre-bundling isn't forced
  */
 export async function loadCachedDepOptimizationMetadata(
@@ -361,13 +361,14 @@ export async function loadCachedDepOptimizationMetadata(
   if (!force) {
     let cachedMetadata: DepOptimizationMetadata | undefined
     try {
+      //  获取 _metadata.json 中的数据
       const cachedMetadataPath = path.join(depsCacheDir, '_metadata.json')
       cachedMetadata = parseDepsOptimizerMetadata(
         await fsp.readFile(cachedMetadataPath, 'utf-8'),
         depsCacheDir,
       )
     } catch (e) {}
-    // hash is consistent, no need to re-bundle
+    // TODO： hash 主要比对的事 *.lock 中内容是否相同
     if (cachedMetadata && cachedMetadata.hash === getDepHash(config, ssr)) {
       log?.('Hash is consistent. Skipping. Use --force to override.')
       // Nothing to commit or cancel as we are using the cache, we only
@@ -378,7 +379,7 @@ export async function loadCachedDepOptimizationMetadata(
     config.logger.info('Forced re-optimization of dependencies')
   }
 
-  // Start with a fresh cache
+  // 不同的话就清空之前的缓存 node_modules/.vite/deps
   await fsp.rm(depsCacheDir, { recursive: true, force: true })
 }
 
@@ -1183,6 +1184,7 @@ function isSingleDefaultExport(exports: readonly string[]) {
 }
 
 const lockfileFormats = [
+  // npm checkPatches 是用来检查是否有可更新的包
   { name: 'package-lock.json', checkPatches: true, manager: 'npm' },
   { name: 'yarn.lock', checkPatches: true, manager: 'yarn' }, // Included in lockfile for v2+
   { name: 'pnpm-lock.yaml', checkPatches: false, manager: 'pnpm' }, // Included in lockfile
@@ -1192,6 +1194,10 @@ const lockfileFormats = [
 })
 const lockfileNames = lockfileFormats.map((l) => l.name)
 
+/**
+ * 将 *.lock + patch 文件的修改时间 node_module 内文件修改时间 + vite.config + node_env 转为 hash
+ * @returns
+ */
 export function getDepHash(config: ResolvedConfig, ssr: boolean): string {
   const lockfilePath = lookupFile(config.root, lockfileNames)
   let content = lockfilePath ? fs.readFileSync(lockfilePath, 'utf-8') : ''
@@ -1201,7 +1207,7 @@ export function getDepHash(config: ResolvedConfig, ssr: boolean): string {
       (f) => f.name === lockfileName,
     )!
     if (checkPatches) {
-      // Default of https://github.com/ds300/patch-package
+      // Default of https://github.com/ds300/patch-package 针对于项目中修改 node_module 内容
       const fullPath = path.join(path.dirname(lockfilePath), 'patches')
       const stat = tryStatSync(fullPath)
       if (stat?.isDirectory()) {

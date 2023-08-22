@@ -2,10 +2,8 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   server: {
-    host: 'localhost',
-    headers: {
-      'Cache-Control': 'no-store',
-    },
+    port: 8080,
+    open: true,
   },
   build: {
     //speed up build

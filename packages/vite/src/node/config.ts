@@ -628,6 +628,7 @@ export async function resolveConfig(
         )
       : ''
 
+  // resolvedRoot = process.cwd
   const server = resolveServerOptions(resolvedRoot, config.server, logger)
   const ssr = resolveSSROptions(
     config.ssr,

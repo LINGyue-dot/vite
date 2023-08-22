@@ -95,7 +95,7 @@ export function createWebSocketServer(
   const hmrPort = hmr && hmr.port
   // TODO: the main server port may not have been chosen yet as it may use the next available
   const portsAreCompatible = !hmrPort || hmrPort === config.server.port
-  const wsServer = hmrServer || (portsAreCompatible && server)
+  const wsServer = hmrServer || (portsAreCompatible && server) // wsServer 和 server 相同
   const customListeners = new Map<string, Set<WebSocketCustomListener<any>>>()
   const clientsMap = new WeakMap<WebSocketRaw, WebSocketClient>()
   const port = hmrPort || 24678

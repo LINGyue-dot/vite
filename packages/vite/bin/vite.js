@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { performance } from 'node:perf_hooks'
 
+// import.meta.url 返回当前文件所在路径
 if (!import.meta.url.includes('node_modules')) {
   try {
     // only available as dev dependency
@@ -15,6 +16,7 @@ const debugIndex = process.argv.findIndex((arg) => /^(?:-d|--debug)$/.test(arg))
 const filterIndex = process.argv.findIndex((arg) =>
   /^(?:-f|--filter)$/.test(arg),
 )
+// cpu 性能数据
 const profileIndex = process.argv.indexOf('--profile')
 
 if (debugIndex > 0) {

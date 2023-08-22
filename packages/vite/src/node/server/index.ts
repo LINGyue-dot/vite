@@ -338,6 +338,7 @@ export async function _createServer(
   inlineConfig: InlineConfig = {},
   options: { ws: boolean },
 ): Promise<ViteDevServer> {
+  // 加载 vite.config.js 等文件中配置
   const config = await resolveConfig(inlineConfig, 'serve')
 
   const { root, server: serverConfig } = config
@@ -350,15 +351,17 @@ export async function _createServer(
   })
 
   const middlewares = connect() as Connect.Server
+  // middlewareMode = false
   const httpServer = middlewareMode
     ? null
     : await resolveHttpServer(serverConfig, middlewares, httpsOptions)
-  const ws = createWebSocketServer(httpServer, config, httpsOptions)
+  const ws = createWebSocketServer(httpServer, config, httpsOptions) // httpOPtions = undef
 
   if (httpServer) {
     setClientErrorHandler(httpServer, config.logger)
   }
 
+  // 文件监听
   const watcher = chokidar.watch(
     // config file dependencies and env file might be outside of root
     [root, ...config.configFileDependencies, config.envDir],
@@ -553,7 +556,7 @@ export async function _createServer(
 
     await onHMRUpdate(file, false)
   })
-
+  // TODO !!!
   watcher.on('add', onFileAddUnlink)
   watcher.on('unlink', onFileAddUnlink)
 
@@ -681,7 +684,7 @@ export async function _createServer(
       await container.buildStart({})
       // start deps optimizer after all container plugins are ready
       if (isDepsOptimizerEnabled(config, false)) {
-        await initDepsOptimizer(config, server)
+        await initDepsOptimizer(config, server) // esbuild 预构建
       }
       initingServer = undefined
       serverInited = true
@@ -694,6 +697,7 @@ export async function _createServer(
     const listen = httpServer.listen.bind(httpServer)
     httpServer.listen = (async (port: number, ...args: any[]) => {
       try {
+        // startHttpServer 时候主动调用执行
         // ensure ws server started
         ws.listen()
         await initServer()
@@ -786,6 +790,7 @@ export function resolveServerOptions(
       raw?.sourcemapIgnoreList === false
         ? () => false
         : raw?.sourcemapIgnoreList || isInNodeModules,
+    // false
     middlewareMode: !!raw?.middlewareMode,
   }
   let allowDirs = server.fs?.allow
