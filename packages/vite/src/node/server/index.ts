@@ -349,19 +349,19 @@ export async function _createServer(
     disableGlobbing: true,
     ...serverConfig.watch,
   })
-
+  // connect() 更像是一个中间件，var app = connect(); http.createServer(app).listen(3000);
   const middlewares = connect() as Connect.Server
-  // middlewareMode = false
+  // middlewareMode = false; httpServer = require('http').createServer(middlewares)
   const httpServer = middlewareMode
     ? null
     : await resolveHttpServer(serverConfig, middlewares, httpsOptions)
-  const ws = createWebSocketServer(httpServer, config, httpsOptions) // httpOPtions = undef
+  const ws = createWebSocketServer(httpServer, config, httpsOptions) // httpOPtions = undefined
 
   if (httpServer) {
     setClientErrorHandler(httpServer, config.logger)
   }
 
-  // 文件监听
+  // 文件监听，一个 fs.watch 的更好方案
   const watcher = chokidar.watch(
     // config file dependencies and env file might be outside of root
     [root, ...config.configFileDependencies, config.envDir],
@@ -371,7 +371,7 @@ export async function _createServer(
   const moduleGraph: ModuleGraph = new ModuleGraph((url, ssr) =>
     container.resolveId(url, undefined, { ssr }),
   )
-
+  //
   const container = await createPluginContainer(config, moduleGraph, watcher)
   const closeHttpServer = createServerCloseFn(httpServer)
 
@@ -425,6 +425,7 @@ export async function _createServer(
       }
     },
     async listen(port?: number, isRestart?: boolean) {
+      // 开启 http.listen
       await startServer(server, port)
       if (httpServer) {
         server.resolvedUrls = await resolveServerUrls(
@@ -432,6 +433,7 @@ export async function _createServer(
           config.server,
           config,
         )
+        // !!! TODO 这里 openBrowser 可能也得看下和 cra 的区别，为什么 vite 设置了 open 不起效果
         if (!isRestart && config.server.open) server.openBrowser()
       }
       return server

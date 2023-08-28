@@ -11,6 +11,7 @@ import { VERSION } from './constants'
 import { bindShortcuts } from './shortcuts'
 import { resolveConfig } from '.'
 
+// cac 命令行操作
 const cli = cac('vite')
 
 // global options

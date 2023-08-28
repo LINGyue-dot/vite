@@ -309,16 +309,16 @@ export async function optimizeServerSsrDeps(
 
   return result.metadata
 }
-
+// 初始化缓存即 node_modules/.vite/dep
 export function initDepsOptimizerMetadata(
   config: ResolvedConfig,
   ssr: boolean,
-  timestamp?: string,
+  timestamp?: string, // undefined
 ): DepOptimizationMetadata {
-  const hash = getDepHash(config, ssr)
+  const hash = getDepHash(config, ssr) // 生成对应的 hash
   return {
     hash,
-    browserHash: getOptimizedBrowserHash(hash, {}, timestamp),
+    browserHash: getOptimizedBrowserHash(hash, {}, timestamp), // 目前看起来没有什么用
     optimized: {},
     chunks: {},
     discovered: {},
@@ -352,10 +352,10 @@ export async function loadCachedDepOptimizationMetadata(
 
   if (firstLoadCachedDepOptimizationMetadata) {
     firstLoadCachedDepOptimizationMetadata = false
-    // Fire up a clean up of stale processing deps dirs if older process exited early
+    // Fire up a clean up of stale processing deps dirs if older process exited early。利用异步来在中途退出时候清空未完整生成的 cache
     setTimeout(() => cleanupDepsCacheStaleDirs(config), 0)
   }
-
+  // /node_modules/.vite/deps
   const depsCacheDir = getDepsCacheDir(config, ssr)
 
   if (!force) {
@@ -464,7 +464,10 @@ export function runOptimizeDeps(
     command: 'build',
   }
 
+  // 获取 cache 绝对路径 -> node_modules/.vite/deps
   const depsCacheDir = getDepsCacheDir(resolvedConfig, ssr)
+  // 获取构建中的缓存绝对路径
+  // /node_modules/.vite/deps_temp_2745fd5e
   const processingCacheDir = getProcessingDepsCacheDir(resolvedConfig, ssr)
 
   // Create a temporal directory so we don't need to delete optimized deps
@@ -476,9 +479,9 @@ export function runOptimizeDeps(
   // all files in the cache directory should be recognized as ES modules
   fs.writeFileSync(
     path.resolve(processingCacheDir, 'package.json'),
-    `{\n  "type": "module"\n}\n`,
+    `{\n  "type": "module"\n}\n`, // 写入
   )
-
+  // 初始化 metadata
   const metadata = initDepsOptimizerMetadata(config, ssr)
 
   metadata.browserHash = getOptimizedBrowserHash(
@@ -505,7 +508,7 @@ export function runOptimizeDeps(
       })
     }
   }
-
+  //
   const succesfulResult: DepOptimizationResult = {
     metadata,
     cancel: cleanUp,
@@ -518,9 +521,10 @@ export function runOptimizeDeps(
       // Ignore clean up requests after this point so the temp folder isn't deleted before
       // we finish commiting the new deps cache files to the deps folder
       committed = true
-
+      // 此时还存在 .vite/deps_temp_a00a148a
       // Write metadata file, then commit the processing folder to the global deps cache
       // Rewire the file paths from the temporal processing dir to the final deps cache dir
+      // datapath 'playground/main-process/node_modules/.vite/deps_temp_01709d05'
       const dataPath = path.join(processingCacheDir, '_metadata.json')
       fs.writeFileSync(
         dataPath,
@@ -535,14 +539,14 @@ export function runOptimizeDeps(
       // so we do a graceful rename checking that the folder has been properly renamed.
       // We found that the rename-rename (then delete the old folder in the background)
       // is safer than a delete-rename operation.
-      const temporalPath = depsCacheDir + getTempSuffix()
+      const temporalPath = depsCacheDir + getTempSuffix() // playground/main-process/node_modules/.vite/deps_temp_01709d05
       const depsCacheDirPresent = fs.existsSync(depsCacheDir)
       if (isWindows) {
         if (depsCacheDirPresent) await safeRename(depsCacheDir, temporalPath)
         await safeRename(processingCacheDir, depsCacheDir)
       } else {
         if (depsCacheDirPresent) fs.renameSync(depsCacheDir, temporalPath)
-        fs.renameSync(processingCacheDir, depsCacheDir)
+        fs.renameSync(processingCacheDir, depsCacheDir) // 直接重命名
       }
 
       // Delete temporal path in the background
@@ -779,17 +783,18 @@ async function prepareEsbuildOptimizerRun(
     plugins.push(esbuildCjsExternalPlugin(external, platform))
   }
   plugins.push(esbuildDepPlugin(flatIdDeps, external, config, ssr))
-
+  // plugins :[{name: 'vite:dep-pre-bundle', setup: ƒ}]
+  // !!! 调用 esbuild 对 三方包进行打包，会将例如 vue 打包到 /node_modules/.deps/vue.js
   const context = await esbuild.context({
     absWorkingDir: process.cwd(),
-    entryPoints: Object.keys(flatIdDeps),
-    bundle: true,
+    entryPoints: Object.keys(flatIdDeps), // [vue]
+    bundle: true, // true 时 esbuild 不会打包 vue import 的东西到项目中，而只会将 vue import 的内容打包到 vue 中
     // We can't use platform 'neutral', as esbuild has custom handling
     // when the platform is 'node' or 'browser' that can't be emulated
     // by using mainFields and conditions
     platform,
     define,
-    format: 'esm',
+    format: 'esm', // iief cjs esm
     // See https://github.com/evanw/esbuild/issues/1921#issuecomment-1152991694
     banner:
       platform === 'node'
@@ -802,7 +807,7 @@ async function prepareEsbuildOptimizerRun(
     logLevel: 'error',
     splitting: true,
     sourcemap: true,
-    outdir: processingCacheDir,
+    outdir: processingCacheDir, // .vite/.dep/vue 是 esbuild 打包的
     ignoreAnnotations: !isBuild,
     metafile: true,
     plugins,
@@ -944,7 +949,7 @@ function getTempSuffix() {
     )
   )
 }
-
+// 默认 /node_modules/.vite/deps
 function getDepsCacheDirPrefix(config: ResolvedConfig): string {
   return normalizePath(path.resolve(config.cacheDir, 'deps'))
 }
@@ -1195,7 +1200,7 @@ const lockfileFormats = [
 const lockfileNames = lockfileFormats.map((l) => l.name)
 
 /**
- * 将 *.lock + patch 文件的修改时间 node_module 内文件修改时间 + vite.config + node_env 转为 hash
+ * !!! cache here 将 *.lock + patch 文件的修改时间 node_module 内文件修改时间 + vite.config + node_env 转为 hash
  * @returns
  */
 export function getDepHash(config: ResolvedConfig, ssr: boolean): string {
@@ -1244,7 +1249,7 @@ export function getDepHash(config: ResolvedConfig, ssr: boolean): string {
   )
   return getHash(content)
 }
-
+// 加上 timestamp
 function getOptimizedBrowserHash(
   hash: string,
   deps: Record<string, string>,

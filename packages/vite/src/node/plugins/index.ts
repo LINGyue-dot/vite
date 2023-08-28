@@ -107,8 +107,11 @@ export async function resolvePlugins(
 export function createPluginHookUtils(
   plugins: readonly Plugin[],
 ): PluginHookUtils {
-  // sort plugins per hook
+  // key 是属性名称
   const sortedPluginsCache = new Map<keyof Plugin, Plugin[]>()
+  /**
+   * 获取排序后 具有 hookName 属性的插件数组
+   */
   function getSortedPlugins(hookName: keyof Plugin): Plugin[] {
     if (sortedPluginsCache.has(hookName))
       return sortedPluginsCache.get(hookName)!
@@ -116,6 +119,9 @@ export function createPluginHookUtils(
     sortedPluginsCache.set(hookName, sorted)
     return sorted
   }
+  /**
+   * 获取排序后并具有 hookName 属性的插件数组
+   */
   function getSortedPluginHooks<K extends keyof Plugin>(
     hookName: K,
   ): NonNullable<HookHandler<Plugin[K]>>[] {
@@ -135,7 +141,21 @@ export function createPluginHookUtils(
     getSortedPluginHooks,
   }
 }
-
+/**
+ * 根据执行顺序 order 返回
+ * hookName 是属性名称，例如 name 或者 resolveId 等
+ * 例如 hookName = 'name' ==> 就会按照执行顺序返回 name 组成的数组
+ * plugins:
+  {name: 'vite:optimized-deps', resolveId: ƒ, load: ƒ}
+  1:
+  {name: 'vite:watch-package-data', buildStart: ƒ, buildEnd: ƒ, watchChange: ƒ, handleHotUpdate: ƒ}
+  2:
+  {name: 'vite:pre-alias', resolveId: ƒ}
+  3:
+  {name: 'alias', buildStart: ƒ, resolveId: ƒ}
+  4:
+  {name: 'vite:modulepreload-polyfill', resolveId: ƒ, load: ƒ}
+ */
 export function getSortedPluginsByHook(
   hookName: keyof Plugin,
   plugins: readonly Plugin[],
@@ -159,5 +179,6 @@ export function getSortedPluginsByHook(
       normal.push(plugin)
     }
   }
+  // 为啥这里要是数组
   return [...pre, ...normal, ...post]
 }

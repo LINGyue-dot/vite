@@ -158,6 +158,7 @@ export async function createPluginContainer(
   watcher?: FSWatcher,
 ): Promise<PluginContainer> {
   const {
+    // 内置会添加上 vite:css 等 20 多种插件 ，大部分位于 node/pugins/*
     plugins,
     logger,
     root,
@@ -239,7 +240,7 @@ export async function createPluginContainer(
       if (key in info) {
         return info[key]
       }
-      // Don't throw an error when returning from an async function
+      // Don't throw an error when returning from an async function 拦截处理以支持异步
       if (key === 'then') {
         return undefined
       }
@@ -316,6 +317,7 @@ export async function createPluginContainer(
         skip = new Set(this._resolveSkips)
         skip.add(this._activePlugin)
       }
+      // out 为完整路径
       let out = await container.resolveId(id, importer, {
         assertions: options?.assertions,
         custom: options?.custom,
@@ -608,8 +610,9 @@ export async function createPluginContainer(
 
   const container: PluginContainer = {
     options: await (async () => {
-      let options = rollupOptions
+      let options = rollupOptions // {} -> void object
       for (const optionsHook of getSortedPluginHooks('options')) {
+        // no-loop
         if (closed) throwClosedServerError()
         options =
           (await handleHookPromise(
@@ -617,6 +620,7 @@ export async function createPluginContainer(
           )) || options
       }
       if (options.acornInjectPlugins) {
+        // false
         parser = acorn.Parser.extend(
           ...(arraify(options.acornInjectPlugins) as any),
         )
@@ -624,7 +628,7 @@ export async function createPluginContainer(
       return {
         acorn,
         acornInjectPlugins: [],
-        ...options,
+        ...options, // {} -> void object
       }
     })(),
 
@@ -639,7 +643,10 @@ export async function createPluginContainer(
         ),
       )
     },
-
+    /**
+     * 传入文件路径等参数，执行并获取具有 resolveId 插件数组，最后调用插件中的 handler 返回拼凑的完整路径
+     * rawId 是目标文件路径，importer 即引入文件路径
+     */
     async resolveId(rawId, importer = join(root, 'index.html'), options) {
       const skip = options?.skip
       const ssr = options?.ssr
@@ -657,7 +664,7 @@ export async function createPluginContainer(
         if (skip?.has(plugin)) continue
 
         ctx._activePlugin = plugin
-
+        // 每个插件都计时
         const pluginResolveStart = debugPluginResolve ? performance.now() : 0
         const handler =
           'handler' in plugin.resolveId
@@ -672,6 +679,7 @@ export async function createPluginContainer(
             scan,
           }),
         )
+        // 处理结果为 undefined 时候就跳过
         if (!result) continue
 
         if (typeof result === 'string') {

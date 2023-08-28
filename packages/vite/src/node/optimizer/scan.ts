@@ -57,14 +57,15 @@ export function scanImports(config: ResolvedConfig): {
   }>
 } {
   // Only used to scan non-ssr code
-
+  // !!! 计时从这开始
   const start = performance.now()
+  // key-value --> 包名称 - 绝对路径
   const deps: Record<string, string> = {}
   const missing: Record<string, string> = {}
   let entries: string[]
 
   const scanContext = { cancelled: false }
-
+  // 计算项目入口文件
   const esbuildContext: Promise<BuildContext | undefined> = computeEntries(
     config,
   ).then((computedEntries) => {
@@ -92,9 +93,11 @@ export function scanImports(config: ResolvedConfig): {
     return prepareEsbuildScanner(config, entries, deps, missing, scanContext)
   })
 
+  // esbuildContex 时候会加载
   const result = esbuildContext
     .then((context) => {
       function disposeContext() {
+        // dispose 释放 context 上下文内存
         return context?.dispose().catch((e) => {
           config.logger.error('Failed to dispose esbuild context', { error: e })
         })
@@ -103,18 +106,21 @@ export function scanImports(config: ResolvedConfig): {
         disposeContext()
         return { deps: {}, missing: {} }
       }
-      return context
-        .rebuild()
-        .then(() => {
-          return {
-            // Ensure a fixed order so hashes are stable and improve logs
-            deps: orderedDependencies(deps),
-            missing,
-          }
-        })
-        .finally(() => {
-          return disposeContext()
-        })
+      return (
+        context
+          //
+          .rebuild()
+          .then(() => {
+            return {
+              // Ensure a fixed order so hashes are stable and improve logs
+              deps: orderedDependencies(deps),
+              missing,
+            }
+          })
+          .finally(() => {
+            return disposeContext()
+          })
+      )
     })
     .catch(async (e) => {
       if (e.errors && e.message.includes('The build was canceled')) {
@@ -159,10 +165,12 @@ export function scanImports(config: ResolvedConfig): {
     result,
   }
 }
-
+/**
+ * 获取入口：优先配置中传入的入口，没有的话就 await globEntries('**\/.html', config)
+ */
 async function computeEntries(config: ResolvedConfig) {
   let entries: string[] = []
-
+  // user config
   const explicitEntryPatterns = config.optimizeDeps.entries
   const buildInput = config.build.rollupOptions?.input
 
@@ -180,6 +188,7 @@ async function computeEntries(config: ResolvedConfig) {
       throw new Error('invalid rollupOptions.input value.')
     }
   } else {
+    // 默认 index.html 作为入口
     entries = await globEntries('**/*.html', config)
   }
 
@@ -191,7 +200,7 @@ async function computeEntries(config: ResolvedConfig) {
 
   return entries
 }
-
+// 初始化 esbuild 插件
 async function prepareEsbuildScanner(
   config: ResolvedConfig,
   entries: string[],
@@ -199,6 +208,7 @@ async function prepareEsbuildScanner(
   missing: Record<string, string>,
   scanContext?: { cancelled: boolean },
 ): Promise<BuildContext | undefined> {
+  // vite plugin container 初始化
   const container = await createPluginContainer(config)
 
   if (scanContext?.cancelled) return
@@ -207,7 +217,10 @@ async function prepareEsbuildScanner(
 
   const { plugins = [], ...esbuildOptions } =
     config.optimizeDeps?.esbuildOptions ?? {}
-
+  // !!! esbuild.context 不是打包，只能算是预构建，会得到 三方包-绝对路径的 map
+  // 会将数据存在 context 中，调用 context.rebuild() 会进行增量构建
+  // 第二次打包在 packages/vite/src/node/optimizer/index.ts#787 其中会对 vue 等三方包进行打包并生成在 /node_modules/.vite/dep/vue.js
+  // 其中就会执行 esbuildScanPlugin 中的 plugins
   return await esbuild.context({
     absWorkingDir: process.cwd(),
     write: false,
@@ -225,7 +238,7 @@ async function prepareEsbuildScanner(
 
 function orderedDependencies(deps: Record<string, string>) {
   const depsList = Object.entries(deps)
-  // Ensure the same browserHash for the same set of dependencies
+  // Ensure the same browserHash for the same set of dependencies 排序下
   depsList.sort((a, b) => a[0].localeCompare(b[0]))
   return Object.fromEntries(depsList)
 }
@@ -254,15 +267,19 @@ const typeRE = /\btype\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/i
 const langRE = /\blang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/i
 const contextRE = /\bcontext\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/i
 
+/**
+ * 构建 esbuild 插件，内部主要根据文件来进行添加 import 以及定位到绝对路径
+ */
 function esbuildScanPlugin(
   config: ResolvedConfig,
   container: PluginContainer,
+  // key-value -> 包名称 - 绝对路径
   depImports: Record<string, string>,
   missing: Record<string, string>,
   entries: string[],
 ): Plugin {
   const seen = new Map<string, string | undefined>()
-
+  // 获取完整路径
   const resolve = async (
     id: string,
     importer?: string,
@@ -305,6 +322,7 @@ function esbuildScanPlugin(
     let transpiledContents
     // transpile because `transformGlobImport` only expects js
     if (loader !== 'js') {
+      // !! esbuild transform
       transpiledContents = (await transform(contents, { loader })).code
     } else {
       transpiledContents = contents
@@ -320,7 +338,7 @@ function esbuildScanPlugin(
 
     return result?.s.toString() || transpiledContents
   }
-
+  // @warning 注意这里 debug 一定要清空缓存
   return {
     name: 'vite:dep-scan',
     setup(build) {
@@ -352,6 +370,8 @@ function esbuildScanPlugin(
       })
 
       // html types: extract script contents -----------------------------------
+      // 解析 vue/html 文件
+      // 1. html/vue 文件先经过这个处理，处理完成之后传递给 onLoad
       build.onResolve({ filter: htmlTypesRE }, async ({ path, importer }) => {
         const resolved = await resolve(path, importer)
         if (!resolved) return
@@ -370,19 +390,25 @@ function esbuildScanPlugin(
       })
 
       // extract scripts inside HTML-like files and treat it as a js module
+      // 2. html 文件
       build.onLoad(
         { filter: htmlTypesRE, namespace: 'html' },
         async ({ path }) => {
+          // path 是绝对路径
           let raw = await fsp.readFile(path, 'utf-8')
           // Avoid matching the content of the comment
+          // 先将注释的内容清空
+          // App.vue 同样被这样处理，raw 就是整个文件的字符串
           raw = raw.replace(commentRE, '<!---->')
           const isHtml = path.endsWith('.html')
           scriptRE.lastIndex = 0
           let js = ''
           let scriptId = 0
           let match: RegExpExecArray | null
+          // 匹配是否是 script tag
           while ((match = scriptRE.exec(raw))) {
             const [, openTag, content] = match
+            // 拿到 script tag 的 type
             const typeMatch = openTag.match(typeRE)
             const type =
               typeMatch && (typeMatch[1] || typeMatch[2] || typeMatch[3])
@@ -390,6 +416,7 @@ function esbuildScanPlugin(
             const lang =
               langMatch && (langMatch[1] || langMatch[2] || langMatch[3])
             // skip non type module script
+            // !!! dev 下预构建会跳过所有非 module 的 script 标签
             if (isHtml && type !== 'module') {
               continue
             }
@@ -412,6 +439,7 @@ function esbuildScanPlugin(
             }
             const srcMatch = openTag.match(srcRE)
             if (srcMatch) {
+              // 拿到 src ，并将 src 的内容放到 content 中添加上 import src
               const src = srcMatch[1] || srcMatch[2] || srcMatch[3]
               js += `import ${JSON.stringify(src)}\n`
             } else if (content.trim()) {
@@ -425,13 +453,16 @@ function esbuildScanPlugin(
               // since they may be used in the template
               const contents =
                 content +
+                // 再添加上 import './components/HelloWorld.vue''
+                // 变成了 'import HelloWorld from './components/HelloWorld.vue' \n import './components/HelloWorld.vue'
                 (loader.startsWith('ts') ? extractImportPaths(content) : '')
 
               const key = `${path}?id=${scriptId++}`
+              // 正则引入多个文件
               if (contents.includes('import.meta.glob')) {
                 scripts[key] = {
                   loader: 'js', // since it is transpiled
-                  contents: await doTransformGlobImport(contents, path, loader),
+                  contents: await doTransformGlobImport(contents, path, loader), // 转译成真实路径以及真实文件名称
                   pluginData: {
                     htmlType: { loader },
                   },
@@ -470,10 +501,13 @@ function esbuildScanPlugin(
           // anywhere in a string. Svelte and Astro files can't have
           // `export default` as code so we know if it's encountered it's a
           // false positive (e.g. contained in a string)
+          // 添加上 export default {}
           if (!path.endsWith('.vue') || !js.includes('export default')) {
             js += '\nexport default {}'
           }
-
+          // 入口文件index.html 引入的 main.ts loader 仍然是 js
+          // 而 .vue 文件中 lang = ts 的 loader 就是 ts
+          // TODO 那么不添加 script lang = ts 且在 main.ts 中不添加 ts 类型可以吗？--> 应该是不行的
           return {
             loader: 'js',
             contents: js,
@@ -487,6 +521,8 @@ function esbuildScanPlugin(
           // avoid matching windows volume
           filter: /^[\w@][^:]/,
         },
+        // 此时解析 import Vue from 'vue'
+        // id = vue
         async ({ path: id, importer, pluginData }) => {
           if (moduleListContains(exclude, id)) {
             return externalUnlessEntry({ path: id })
@@ -494,6 +530,7 @@ function esbuildScanPlugin(
           if (depImports[id]) {
             return externalUnlessEntry({ path: id })
           }
+          // resolve 绝对路径 xxx/main-process/node_modules/vue/dist/vue.runtime.esm-bundle.js
           const resolved = await resolve(id, importer, {
             custom: {
               depScan: { loader: pluginData?.htmlType?.loader },
@@ -503,9 +540,11 @@ function esbuildScanPlugin(
             if (shouldExternalizeDep(resolved, id)) {
               return externalUnlessEntry({ path: id })
             }
+            //
             if (isInNodeModules(resolved) || include?.includes(id)) {
               // dependency or forced included, externalize and stop crawling
               if (isOptimizable(resolved, config.optimizeDeps)) {
+                //
                 depImports[id] = resolved
               }
               return externalUnlessEntry({ path: id })
@@ -557,8 +596,11 @@ function esbuildScanPlugin(
         {
           filter: /.*/,
         },
+        // TODO 这里只是对 js 的分析，main.ts 是 ts 应该变现与这个不一致
+        // id = /src/main.js
         async ({ path: id, importer, pluginData }) => {
           // use vite resolver to support urls and omitted extensions
+          // resolved = xxx/main-process/src/main.js
           const resolved = await resolve(id, importer, {
             custom: {
               depScan: { loader: pluginData?.htmlType?.loader },
@@ -572,6 +614,7 @@ function esbuildScanPlugin(
             const namespace = htmlTypesRE.test(resolved) ? 'html' : undefined
 
             return {
+              // path = xxx/main-process/src/main.js
               path: path.resolve(cleanUrl(resolved)),
               namespace,
             }
@@ -607,6 +650,15 @@ function esbuildScanPlugin(
 
         return {
           loader,
+          // contents 就是解析 main.js 的内容
+          // `import { createApp } from "vue";
+          // import App from "./App";
+          // import { toString, toArray } from "lodash-es";
+          // console.log(toString(123));
+          // console.log(toArray([]));
+          // createApp(App).mount("#app");`
+          // !!! 这里面的 import 会再度触发 onResolve
+          // !!! id 就是 from 中的内容
           contents,
         }
       })

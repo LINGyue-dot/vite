@@ -201,7 +201,7 @@ async function createDepsOptimizer(
 
     const deps: Record<string, string> = {}
     await addManuallyIncludedOptimizeDeps(deps, config, ssr)
-
+    // 查找自定义的缓存依赖 --> 构建出 依赖-绝对路径 map
     const discovered = toDiscoveredDependencies(
       config,
       deps,
@@ -228,8 +228,9 @@ async function createDepsOptimizer(
         ;(async () => {
           try {
             debug?.(colors.green(`scanning for dependencies...`))
-
+            // 用 esbuild 对引入文件进行递归索引，并将 三方包-绝对路径 的 map 返回
             discover = discoverProjectDependencies(config)
+            // deps 就是三方包和绝对路径的 key-value
             const deps = await discover.result
             discover = undefined
 
@@ -238,6 +239,7 @@ async function createDepsOptimizer(
             // This is also used by the CJS externalization heuristics in legacy mode
             for (const id of Object.keys(deps)) {
               if (!metadata.discovered[id]) {
+                // 添加到 metadata 中
                 addMissingDep(id, deps[id])
               }
             }
@@ -275,9 +277,11 @@ async function createDepsOptimizer(
   function prepareKnownDeps() {
     const knownDeps: Record<string, OptimizedDepInfo> = {}
     // Clone optimized info objects, fileHash, browserHash may be changed for them
+    // optimized：指的是经过 Vite 的优化处理后的依赖项。Vite 使用了一种基于 ES modules 的优化策略，将每个依赖项都作为一个单独的模块进行处理，并按需加载。这种优化策略可以提高开发过程中的构建速度和性能。
     for (const dep of Object.keys(metadata.optimized)) {
       knownDeps[dep] = { ...metadata.optimized[dep] }
     }
+    //  discovered：指的是在 Vite 构建过程中，通过扫描源代码文件，发现的所有依赖项（例如模块、文件等）。这些依赖项可能是 JavaScript 模块、CSS 文件、图片等。
     for (const dep of Object.keys(metadata.discovered)) {
       // Clone the discovered info discarding its processing promise
       const { processing, ...info } = metadata.discovered[dep]
