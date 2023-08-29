@@ -789,6 +789,7 @@ async function prepareEsbuildOptimizerRun(
     absWorkingDir: process.cwd(),
     entryPoints: Object.keys(flatIdDeps), // [vue]
     bundle: true, // true 时 esbuild 不会打包 vue import 的东西到项目中，而只会将 vue import 的内容打包到 vue 中
+    // 即将 loadsh-es 打包在一起而非 600 多个单独模块
     // We can't use platform 'neutral', as esbuild has custom handling
     // when the platform is 'node' or 'browser' that can't be emulated
     // by using mainFields and conditions

@@ -342,6 +342,9 @@ function esbuildScanPlugin(
   return {
     name: 'vite:dep-scan',
     setup(build) {
+      // 调用权在 esbuild
+      // 所有 build 先经过 onResolve 返回真实路径再 onLoad
+      // 如果 onLoad 没有返回值就会再放到下一个 onLoad
       const scripts: Record<string, OnLoadResult> = {}
 
       // external urls
@@ -390,7 +393,9 @@ function esbuildScanPlugin(
       })
 
       // extract scripts inside HTML-like files and treat it as a js module
-      // 2. html 文件
+      // 2. html、Vue 文件会提取出 script 标签 -> 内联标签与外部 script
+      // 外部 script 会直接转为 import 语句引入外部 script
+      // 内联 script 内容会作为虚拟模块引入
       build.onLoad(
         { filter: htmlTypesRE, namespace: 'html' },
         async ({ path }) => {
@@ -438,11 +443,14 @@ function esbuildScanPlugin(
               loader = 'ts'
             }
             const srcMatch = openTag.match(srcRE)
+            // >>> 外部 script 标签，直接引入外部 script
             if (srcMatch) {
               // 拿到 src ，并将 src 的内容放到 content 中添加上 import src
               const src = srcMatch[1] || srcMatch[2] || srcMatch[3]
               js += `import ${JSON.stringify(src)}\n`
             } else if (content.trim()) {
+              // >>> 内联 script 标签
+              // 会将 script 标签内容弄成一个虚拟模块，并在原 vue/html 文件中直接 import 引入
               // The reason why virtual modules are needed:
               // 1. There can be module scripts (`<script context="module">` in Svelte and `<script>` in Vue)
               // or local scripts (`<script>` in Svelte and `<script setup>` in Vue)
@@ -451,10 +459,10 @@ function esbuildScanPlugin(
 
               // append imports in TS to prevent esbuild from removing them
               // since they may be used in the template
+              // 再添加上 import './components/HelloWorld.vue''
+              // 变成了 'import HelloWorld from './components/HelloWorld.vue' \n import './components/HelloWorld.vue' 防止被擦除
               const contents =
                 content +
-                // 再添加上 import './components/HelloWorld.vue''
-                // 变成了 'import HelloWorld from './components/HelloWorld.vue' \n import './components/HelloWorld.vue'
                 (loader.startsWith('ts') ? extractImportPaths(content) : '')
 
               const key = `${path}?id=${scriptId++}`
@@ -476,7 +484,7 @@ function esbuildScanPlugin(
                   },
                 }
               }
-
+              // 虚拟模块
               const virtualModulePath = JSON.stringify(
                 virtualModulePrefix + key,
               )
@@ -489,9 +497,11 @@ function esbuildScanPlugin(
               // Especially for Svelte files, exports in <script context="module"> means module exports,
               // exports in <script> means component props. To avoid having two same export name from the
               // star exports, we need to ignore exports in <script>
+
               if (path.endsWith('.svelte') && context !== 'module') {
                 js += `import ${virtualModulePath}\n`
               } else {
+                // 将内联 script 转为虚拟模块，后在其中 import
                 js += `export * from ${virtualModulePath}\n`
               }
             }
