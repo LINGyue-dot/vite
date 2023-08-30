@@ -212,6 +212,7 @@ export function normalizePath(id: string): string {
 
 export function fsPathFromId(id: string): string {
   const fsPath = normalizePath(
+    // a -> fsPath = /node_modules/.vite/deps/vue.js
     id.startsWith(FS_PREFIX) ? id.slice(FS_PREFIX.length) : id,
   )
   return fsPath[0] === '/' || fsPath.match(VOLUME_RE) ? fsPath : `/${fsPath}`
@@ -259,6 +260,7 @@ export function isSameFileUri(file1: string, file2: string): boolean {
 export const queryRE = /\?.*$/s
 
 const postfixRE = /[?#].*$/s
+// 去除所有 query 以及锚点
 export function cleanUrl(url: string): string {
   return url.replace(postfixRE, '')
 }
@@ -279,6 +281,7 @@ export const isJSRequest = (url: string): boolean => {
     return true
   }
   if (!path.extname(url) && url[url.length - 1] !== '/') {
+    // path.extname 获取扩展名
     return true
   }
   return false

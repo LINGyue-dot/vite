@@ -48,7 +48,7 @@ export function transformRequest(
   options: TransformOptions = {},
 ): Promise<TransformResult | null> {
   if (server._restartPromise) throwClosedServerError()
-
+  // cacheKey =  '/@vite/client' === url
   const cacheKey = (options.ssr ? 'ssr:' : options.html ? 'html:' : '') + url
 
   // This module may get invalidated while we are processing it. For example
@@ -126,13 +126,17 @@ async function doTransform(
   const { config, pluginContainer } = server
   const prettyUrl = debugCache ? prettifyUrl(url, config.root) : ''
   const ssr = !!options.ssr
-
+  // url = '/@vite/client' module =undefined
   const module = await server.moduleGraph.getModuleByUrl(url, ssr)
 
   // check if we have a fresh cache
+  // 是否有缓存
+  // TODO module.transformResult 这个缓存是什么东西
   const cached =
     module && (ssr ? module.ssrTransformResult : module.transformResult)
+  //
   if (cached) {
+    // 第二个页面打
     // TODO: check if the module is "partially invalidated" - i.e. an import
     // down the chain has been fully invalidated, but this current module's
     // content has not changed.
@@ -143,6 +147,7 @@ async function doTransform(
     return cached
   }
 
+  // 获取模块绝对路径 {id: '/Users/chenshunze/Desktop/source-code/vite/packages/vite/dist/client/client.mjs'}
   const resolved = module
     ? undefined
     : (await pluginContainer.resolveId(url, undefined, { ssr })) ?? undefined
@@ -166,7 +171,7 @@ async function doTransform(
 }
 
 async function loadAndTransform(
-  id: string,
+  id: string, // 绝对路径
   url: string,
   server: ViteDevServer,
   options: TransformOptions,
@@ -187,8 +192,10 @@ async function loadAndTransform(
 
   // load
   const loadStart = debugLoad ? performance.now() : 0
+  // 读取文件内容
   const loadResult = await pluginContainer.load(id, { ssr })
   if (loadResult == null) {
+    // '/Users/chenshunze/Desktop/source-code/vite/packages/vite/dist/client/client.mjs' 没有被 plugin load 处理直接返回 null
     // if this is an html request and there is no load result, skip ahead to
     // SPA fallback.
     if (options.html && !id.endsWith('.html')) {
@@ -201,7 +208,8 @@ async function loadAndTransform(
     // like /service-worker.js or /api/users
     if (options.ssr || isFileServingAllowed(file, server)) {
       try {
-        code = await fsp.readFile(file, 'utf-8')
+        // main.ts / @vite/client 直接读取文件 ???!!! 为啥没有被 ts-loader 处理？
+        code = await fsp.readFile(file, 'utf-8') // 异步读取
         debugLoad?.(`${timeFrom(loadStart)} [fs] ${prettyUrl}`)
       } catch (e) {
         if (e.code !== 'ENOENT') {
@@ -259,11 +267,13 @@ async function loadAndTransform(
   if (server._restartPromise) throwClosedServerError()
 
   // ensure module in graph after successful load
+  // 创建缓存
   mod ??= await moduleGraph._ensureEntryFromUrl(url, ssr, undefined, resolved)
   ensureWatchedFile(watcher, mod.file, root)
 
   // transform
   const transformStart = debugTransform ? performance.now() : 0
+  // 转换文件内容
   const transformResult = await pluginContainer.transform(code, id, {
     inMap: map,
     ssr,
@@ -321,12 +331,14 @@ async function loadAndTransform(
 
   if (server._restartPromise) throwClosedServerError()
 
+  // !!! 这里将 transformResult 缓存起来，缓存到 mod 中去了
   const result =
     ssr && !server.config.experimental.skipSsrTransform
       ? await server.ssrTransform(code, map as SourceMap, url, originalCode)
       : ({
           code,
           map,
+          // 直接用 etag 库生成
           etag: getEtag(code, { weak: true }),
         } as TransformResult)
 

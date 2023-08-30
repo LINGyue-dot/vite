@@ -104,7 +104,16 @@ export class ModuleGraph {
     }
 
     const [url] = await this._resolveUrl(rawUrl, ssr)
-    return this.urlToModuleMap.get(url)
+    return this.urlToModuleMap.get(url) // urlToModuleMap 包括 index.html main.ts App.vue 以及 vue ???
+    /// urlToModuleMap 如下 helloworld.vue 呢？
+    // 0:
+    // {"/src/main.ts" => ModuleNode}
+    // 1:
+    // {"/src/style.css" => ModuleNode}
+    // 2:
+    // {"/src/App.vue" => ModuleNode}
+    // 3:
+    // {"/node_modules/.vite/deps/vue.js?v=a648183c" => ModuleNode}
   }
 
   getModuleById(id: string): ModuleNode | undefined {
@@ -116,11 +125,11 @@ export class ModuleGraph {
   }
 
   onFileChange(file: string): void {
-    const mods = this.getModulesByFile(file)
+    const mods = this.getModulesByFile(file) // TODO 为什么一个 App.vue 会有两个 mod ->  '/Users/chenshunze/Desktop/source-code/vite/playground/main-process/src/App.vue' 与 '/Users/chenshunze/Desktop/source-code/vite/playground/main-process/src/App.vue?vue&type=style&index=0&scoped=7a7a37b1&lang.css'
     if (mods) {
       const seen = new Set<ModuleNode>()
       mods.forEach((mod) => {
-        this.invalidateModule(mod, seen)
+        this.invalidateModule(mod, seen) // 主要修改了自己以及递归父组件的 lastInvalidationTimestamp 字段
       })
     }
   }
@@ -137,6 +146,7 @@ export class ModuleGraph {
     }
     seen.add(mod)
     if (isHmr) {
+      // ??? b -> false  那什么时候 isHmr = true
       mod.lastHMRTimestamp = timestamp
     } else {
       // Save the timestamp for this invalidation, so we can avoid caching the result of possible already started
@@ -145,16 +155,17 @@ export class ModuleGraph {
     }
     // Don't invalidate mod.info and mod.meta, as they are part of the processing pipeline
     // Invalidating the transform result is enough to ensure this module is re-processed next time it is requested
-    mod.transformResult = null
+    mod.transformResult = null // 这么看来应该是得重新走一遍 doTransform()
     mod.ssrTransformResult = null
     mod.ssrModule = null
     mod.ssrError = null
 
-    // Fix #3033
+    // Fix #3033 b -> 第二次从 packages/vite/src/node/server/hmr.ts#L150 走来的是 true
     if (hmrBoundaries.includes(mod)) {
       return
     }
     mod.importers.forEach((importer) => {
+      // 这个应该是通知父组件，即 import 他的组件. main.ts 的 mode.importers 是空
       if (!importer.acceptedHmrDeps.has(mod)) {
         this.invalidateModule(importer, seen, timestamp, isHmr)
       }
@@ -272,7 +283,7 @@ export class ModuleGraph {
    * @internal
    */
   async _ensureEntryFromUrl(
-    rawUrl: string,
+    rawUrl: string, // url 上的路径即相对路径
     ssr?: boolean,
     setIsSelfAccepting = true,
     // Optimization, avoid resolving the same url twice if the caller already did it
@@ -295,9 +306,9 @@ export class ModuleGraph {
         mod = new ModuleNode(url, setIsSelfAccepting)
         if (meta) mod.meta = meta
         this.urlToModuleMap.set(url, mod)
-        mod.id = resolvedId
+        mod.id = resolvedId // 存了一个 resolvedId 绝对路径
         this.idToModuleMap.set(resolvedId, mod)
-        const file = (mod.file = cleanUrl(resolvedId))
+        const file = (mod.file = cleanUrl(resolvedId)) // 绝对路径
         let fileMappedModules = this.fileToModulesMap.get(file)
         if (!fileMappedModules) {
           fileMappedModules = new Set()
@@ -387,7 +398,7 @@ export class ModuleGraph {
    * @internal
    */
   async _resolveUrl(
-    url: string,
+    url: string, // url 上的路径，即相对路径
     ssr?: boolean,
     alreadyResolved?: PartialResolvedId,
   ): Promise<ResolvedUrl> {

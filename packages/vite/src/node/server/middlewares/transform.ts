@@ -43,6 +43,8 @@ const debugCache = createDebugger('vite:cache')
 
 const knownIgnoreList = new Set(['/', '/favicon.ico'])
 
+// 使用的目的
+// 将包转为绝对路径、将 .vue .ts 后缀转为 .js 后缀
 export function transformMiddleware(
   server: ViteDevServer,
 ): Connect.NextHandleFunction {
@@ -56,9 +58,10 @@ export function transformMiddleware(
     if (req.method !== 'GET' || knownIgnoreList.has(req.url!)) {
       return next()
     }
-
+    // 1. url = '/@vite/client'
     let url: string
     try {
+      // 去除 timestamp 时间戳 query
       url = decodeURI(removeTimestampQuery(req.url!)).replace(
         NULL_BYTE_PLACEHOLDER,
         '\0',
@@ -126,9 +129,10 @@ export function transformMiddleware(
         }
       }
 
+      // ??? TODO
       // check if public dir is inside root dir
-      const publicDir = normalizePath(server.config.publicDir)
-      const rootDir = normalizePath(server.config.root)
+      const publicDir = normalizePath(server.config.publicDir) // /playground/main-process/public
+      const rootDir = normalizePath(server.config.root) // /playground/main-process
       if (publicDir.startsWith(rootDir)) {
         const publicPath = `${publicDir.slice(rootDir.length)}/`
         // warn explicit public paths
@@ -164,7 +168,7 @@ export function transformMiddleware(
           logger.warn(colors.yellow(warning))
         }
       }
-
+      //
       if (
         isJSRequest(url) ||
         isImportRequest(url) ||
@@ -186,9 +190,10 @@ export function transformMiddleware(
         ) {
           url = injectQuery(url, 'direct')
         }
-
+        // TODO ifNoneMatch 是怎么生成的
         // check if we can return 304 early
-        const ifNoneMatch = req.headers['if-none-match']
+        const ifNoneMatch = req.headers['if-none-match'] // 'W/"6033-5V70usK56D0t2b1A7hJX7C8SBBg"'
+        // 存在缓存 -->
         if (
           ifNoneMatch &&
           (await moduleGraph.getModuleByUrl(url, false))?.transformResult
@@ -211,6 +216,7 @@ export function transformMiddleware(
           return send(req, res, result.code, type, {
             etag: result.etag,
             // allow browser to cache npm deps!
+            // 31536000 --> 一年
             cacheControl: isDep ? 'max-age=31536000,immutable' : 'no-cache',
             headers: server.config.server.headers,
             map: result.map,

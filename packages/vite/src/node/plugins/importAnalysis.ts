@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 import colors from 'picocolors'
-import MagicString from 'magic-string'
+import MagicString from 'magic-string' // 目前看是和 source-map 链接相关的，用于底部索引
 import type { ExportSpecifier, ImportSpecifier } from 'es-module-lexer'
 import { init, parse as parseImports } from 'es-module-lexer'
 import { parse as parseJS } from 'acorn'
@@ -68,8 +68,9 @@ const debug = createDebugger('vite:import-analysis')
 const clientDir = normalizePath(CLIENT_DIR)
 
 const skipRE = /\.(?:map|json)(?:$|\?)/
-export const canSkipImportAnalysis = (id: string): boolean =>
-  skipRE.test(id) || isDirectCSSRequest(id)
+export const canSkipImportAnalysis = (
+  id: string,
+): boolean => skipRE.test(id) || isDirectCSSRequest(id) // .map .json 或 .css 文件就 true
 
 const optimizedDepChunkRE = /\/chunk-[A-Z\d]{8}\.js/
 const optimizedDepDynamicRE = /-[A-Z\d]{8}\.js/
@@ -201,7 +202,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
     configureServer(_server) {
       server = _server
     },
-
+    // a => main.ts source : 'import { createApp } from "vue";import "./style.css";import App from "./App.vue";createApp(App).mount("#app");' importer : '/Users/chenshunze/Desktop/source-code/vite/playground/main-process/src/main.ts'
     async transform(source, importer, options) {
       // In a real app `server` is always defined, but it is undefined when
       // running src/node/server/__tests__/pluginContainer.spec.ts
@@ -223,7 +224,8 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
       let exports!: readonly ExportSpecifier[]
       source = stripBomTag(source)
       try {
-        ;[imports, exports] = parseImports(source)
+        // a -> imports = [{n:'vue'},{n:'./style.css'},{n:'./App.vue'}] exports =[]
+        ;[imports, exports] = parseImports(source) // 词法分析
       } catch (e: any) {
         const isVue = importer.endsWith('.vue')
         const isJsx = importer.endsWith('.jsx') || importer.endsWith('.tsx')
@@ -250,7 +252,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
       }
 
       const depsOptimizer = getDepsOptimizer(config, ssr)
-
+      // 这时候已经创建了 ModuleNode ，目前还在调用 plugins 进行 transform
       const { moduleGraph } = server
       // since we are already in the transform phase of the importer, it must
       // have been loaded so its entry is guaranteed in the module graph.
@@ -311,7 +313,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
             }
           }
         }
-
+        // 这个 this.reolve 调用的是 pluginContainer.ts#305 中的 resolve 函数
         const resolved = await this.resolve(url, importerFile)
 
         if (!resolved) {
@@ -420,17 +422,17 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
       await Promise.all(
         imports.map(async (importSpecifier, index) => {
           const {
-            s: start,
-            e: end,
-            ss: expStart,
+            s: start, // from 中内容的字符开始 27
+            e: end, //
+            ss: expStart, //表达式开始 0
             se: expEnd,
-            d: dynamicIndex,
+            d: dynamicIndex, // -1
             // #2083 User may use escape path,
             // so use imports[index].n to get the unescaped string
-            n: specifier,
-            a: assertIndex,
+            n: specifier, // 引入的内容 ==> vue
+            a: assertIndex, // -1
           } = importSpecifier
-
+          // a -> rawUrl = vue
           const rawUrl = source.slice(start, end)
 
           // check import.meta usage
@@ -478,7 +480,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
           }
 
           // static import or valid string in dynamic import
-          // If resolvable, let's resolve it
+          // If resolvable, let's resolve it . a -> vue
           if (specifier) {
             // skip external / data uri
             if (isExternalUrl(specifier) || isDataUrl(specifier)) {
@@ -556,7 +558,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
               }
             }
 
-            // record as safe modules
+            // record as safe modules // ???
             server?.moduleGraph.safeModulesPath.add(fsPathFromUrl(url))
 
             if (url !== specifier) {
@@ -573,6 +575,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
                 const file = cleanUrl(resolvedId) // Remove ?v={hash}
 
                 const needsInterop = await optimizedDepNeedsInterop(
+                  // a -> false
                   depsOptimizer.metadata,
                   file,
                   config,
@@ -734,6 +737,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
           } ${prettyImporter}`,
         )
         // inject hot context
+        // 目前看来 main.ts 是没有的
         str().prepend(
           `import { createHotContext as __vite__createHotContext } from "${clientPublicPath}";` +
             `import.meta.hot = __vite__createHotContext(${JSON.stringify(

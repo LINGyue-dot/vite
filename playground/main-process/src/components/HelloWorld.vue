@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-defineProps<{ msg: string }>()
+const props = defineProps<{ msg: string | undefined }>()
 
 const count = ref(0)
+
+if (props.msg) {
+  // App.vue 热更新时候这里不会再被触发
+  console.log('-=-=-=qwqw-=')
+}
 </script>
 
 <template>

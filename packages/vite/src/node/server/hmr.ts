@@ -47,17 +47,18 @@ export async function handleHMRUpdate(
   configOnly: boolean,
 ): Promise<void> {
   const { ws, config, moduleGraph } = server
-  const shortFile = getShortName(file, config.root)
-  const fileName = path.basename(file)
+  const shortFile = getShortName(file, config.root) // 绝对路径 b -> src/App.vue
+  const fileName = path.basename(file) // 文件名称 b -> App.vue
 
-  const isConfig = file === config.configFile
+  const isConfig = file === config.configFile // vite.config.js
   const isConfigDependency = config.configFileDependencies.some(
     (name) => file === name,
-  )
+  ) // viteconfig 中的依赖
   const isEnv =
     config.inlineConfig.envFile !== false &&
-    (fileName === '.env' || fileName.startsWith('.env.'))
+    (fileName === '.env' || fileName.startsWith('.env.')) // 环境变量
   if (isConfig || isConfigDependency || isEnv) {
+    // !!! 如果这三者就直接重启/重新构建
     // auto restart server
     debugHmr?.(`[config change] ${colors.dim(shortFile)}`)
     config.logger.info(
@@ -102,7 +103,7 @@ export async function handleHMRUpdate(
   }
 
   for (const hook of config.getSortedPluginHooks('handleHotUpdate')) {
-    const filteredModules = await hook(hmrContext)
+    const filteredModules = await hook(hmrContext) // b -> vite:watch-package-data 检查是否为 package.json 。 vite:vue 中的 handleHotUpdate 会生成新 ModuleNode
     if (filteredModules) {
       hmrContext.modules = filteredModules
     }
@@ -145,7 +146,7 @@ export function updateModules(
 
   for (const mod of modules) {
     const boundaries: { boundary: ModuleNode; acceptedVia: ModuleNode }[] = []
-    const hasDeadEnd = propagateUpdate(mod, traversedModules, boundaries)
+    const hasDeadEnd = propagateUpdate(mod, traversedModules, boundaries) // propagateUpdate 返回 true 说明无法找到热更新边界，需要全量更新。如果为 false 说明找到热更新边界并存放在 boundaries 中
 
     moduleGraph.invalidateModule(
       mod,
@@ -166,7 +167,7 @@ export function updateModules(
 
     updates.push(
       ...boundaries.map(({ boundary, acceptedVia }) => ({
-        type: `${boundary.type}-update` as const,
+        type: `${boundary.type}-update` as const, // b ->  js-update
         timestamp,
         path: normalizeHmrUrl(boundary.url),
         explicitImportRequired:
@@ -257,7 +258,7 @@ function propagateUpdate(
     )
     return false
   }
-
+  // isSelfAccepting = true 代表他有 import.hot.accept 函数，例如 vue jsx tsx ，这时候只需要将 node 放到 boundaries 中
   if (node.isSelfAccepting) {
     boundaries.push({ boundary: node, acceptedVia: node })
 
@@ -273,7 +274,7 @@ function propagateUpdate(
         )
       }
     }
-
+    // false 说明找到边界，不需要全量更新
     return false
   }
 

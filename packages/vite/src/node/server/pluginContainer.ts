@@ -648,6 +648,7 @@ export async function createPluginContainer(
      * rawId 是目标文件路径，importer 即引入文件路径
      */
     async resolveId(rawId, importer = join(root, 'index.html'), options) {
+      // a -> rawId = vue
       const skip = options?.skip
       const ssr = options?.ssr
       const scan = !!options?.scan
@@ -658,6 +659,7 @@ export async function createPluginContainer(
       const resolveStart = debugResolve ? performance.now() : 0
       let id: string | null = null
       const partial: Partial<PartialResolvedId> = {}
+      // 一直调用有 reoslvId 属性的 plugin ，一旦有 plugin 返回 result 就 break
       for (const plugin of getSortedPlugins('resolveId')) {
         if (closed) throwClosedServerError()
         if (!plugin.resolveId) continue
@@ -681,7 +683,7 @@ export async function createPluginContainer(
         )
         // 处理结果为 undefined 时候就跳过
         if (!result) continue
-
+        // vite:resolve 处理了 main.ts
         if (typeof result === 'string') {
           id = result
         } else {
@@ -719,12 +721,13 @@ export async function createPluginContainer(
         return null
       }
     },
-
+    // load 读取内容 ， id 绝对路径
     async load(id, options) {
       const ssr = options?.ssr
       const ctx = new Context()
       ctx.ssr = !!ssr
       for (const plugin of getSortedPlugins('load')) {
+        // 'vite:optimized-deps'
         if (closed) throwClosedServerError()
         if (!plugin.load) continue
         ctx._activePlugin = plugin
@@ -739,16 +742,17 @@ export async function createPluginContainer(
           }
           return result
         }
-      }
+      } // '/Users/chenshunze/Desktop/source-code/vite/packages/vite/dist/client/client.mjs' 以及 main.ts 没有被 plugins 处理，直接返回 null
       return null
     },
-
+    // 加载所有插件进行转换文件内容，resolveId 是有一个 result 就可以
     async transform(code, id, options) {
       const inMap = options?.inMap
       const ssr = options?.ssr
       const ctx = new TransformContext(id, code, inMap as SourceMap)
       ctx.ssr = !!ssr
       for (const plugin of getSortedPlugins('transform')) {
+        // vite:esbuild vite:import-analysis transform main.ts
         if (closed) throwClosedServerError()
         if (!plugin.transform) continue
         ctx._activePlugin = plugin
@@ -773,6 +777,9 @@ export async function createPluginContainer(
           plugin.name,
           prettifyUrl(id, root),
         )
+
+        // vite: esbuild result 是：'import { createApp } from "vue";\nimport "./style.css";\nimport App from "./App.vue";\ncreateApp(App).mount("#app");\n'。
+        // vite:importe-analysis 是 'import { createApp } from "/node_modules/.vite/deps/vue.js?v=a648183c";\nimport "/src/style.css";\nimport App from "/src/App.vue";\ncreateApp(App).mount("#app");\n' 将 三方包位置转换为具体位置，并将 from src 转换为相对路径
         if (isObject(result)) {
           if (result.code !== undefined) {
             code = result.code
@@ -790,7 +797,7 @@ export async function createPluginContainer(
         }
       }
       return {
-        code,
+        code, // 'import { createApp } from "/node_modules/.vite/deps/vue.js?v=a648183c";import "/src/style.css";import App from "/src/App.vue";createApp(App).mount("#app");'
         map: ctx._getCombinedSourcemap(),
       }
     },

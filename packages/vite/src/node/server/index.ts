@@ -8,6 +8,7 @@ import colors from 'picocolors'
 import chokidar from 'chokidar'
 import type { FSWatcher, WatchOptions } from 'dep-types/chokidar'
 import type { Connect } from 'dep-types/connect'
+// 这个 npm 包似乎是在页面索引回编辑器
 import launchEditorMiddleware from 'launch-editor-middleware'
 import type { SourceMap } from 'rollup'
 import picomatch from 'picomatch'
@@ -338,7 +339,7 @@ export async function _createServer(
   inlineConfig: InlineConfig = {},
   options: { ws: boolean },
 ): Promise<ViteDevServer> {
-  // 加载 vite.config.js 等文件中配置
+  // 加载 vite.config.js 等文件中配置以及加上内置的 plugins
   const config = await resolveConfig(inlineConfig, 'serve')
 
   const { root, server: serverConfig } = config
@@ -364,6 +365,9 @@ export async function _createServer(
   // 文件监听，一个 fs.watch 的更好方案
   const watcher = chokidar.watch(
     // config file dependencies and env file might be outside of root
+    // root = '/Users/chenshunze/Desktop/source-code/vite/playground/main-process'
+    // config.configFileDependencies = ['/Users/chenshunze/Desktop/source-code/vite/playground/main-process/vite.config.ts']
+    // envDir = '/Users/chenshunze/Desktop/source-code/vite/playground/main-process'
     [root, ...config.configFileDependencies, config.envDir],
     resolvedWatchOptions,
   ) as FSWatcher
@@ -544,13 +548,13 @@ export async function _createServer(
       }
     }
   }
-
+  // 添加或删除文件
   const onFileAddUnlink = async (file: string) => {
     file = normalizePath(file)
     await handleFileAddUnlink(file, server)
     await onHMRUpdate(file, true)
   }
-
+  // 文件变化 b -> 修改 main-process/App.vue 中的传递给 HelloWorld 的 msg
   watcher.on('change', async (file) => {
     file = normalizePath(file)
     // invalidate module graph cache on file change
@@ -609,6 +613,7 @@ export async function _createServer(
   }
 
   // proxy
+  // TODO 看下 proxy 是怎么做的
   const { proxy } = serverConfig
   if (proxy) {
     middlewares.use(proxyMiddleware(httpServer, proxy, config))
@@ -642,6 +647,7 @@ export async function _createServer(
   }
 
   // main transform middleware
+  // -->
   middlewares.use(transformMiddleware(server))
 
   // serve static files

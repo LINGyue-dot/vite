@@ -437,6 +437,8 @@ async function fetchUpdate({
   timestamp,
   explicitImportRequired,
 }: Update) {
+  // 在服务端计算出影响的模块，在客户端直接调用更新
+  // 父组件变化，应该子组件全部重新更新
   const mod = hotModulesMap.get(path)
   if (!mod) {
     // In a code-splitting project,
@@ -446,7 +448,7 @@ async function fetchUpdate({
   }
 
   let fetchedModule: ModuleNamespace | undefined
-  const isSelfUpdate = path === acceptedPath
+  const isSelfUpdate = path === acceptedPath // true
 
   // determine the qualified callbacks before we re-import the modules
   const qualifiedCallbacks = mod.callbacks.filter(({ deps }) =>
@@ -458,6 +460,7 @@ async function fetchUpdate({
     if (disposer) await disposer(dataMap.get(acceptedPath))
     const [acceptedPathWithoutQuery, query] = acceptedPath.split(`?`)
     try {
+      // 重新请求获取 module ，由于此时 transform 生成的 etag 与旧的 if-no-modify 不同，所以 304 失败
       fetchedModule = await import(
         /* @vite-ignore */
         base +
@@ -473,6 +476,7 @@ async function fetchUpdate({
 
   return () => {
     for (const { deps, fn } of qualifiedCallbacks) {
+      // 执行传入的 accept 的函数
       fn(deps.map((dep) => (dep === acceptedPath ? fetchedModule : undefined)))
     }
     const loggedPath = isSelfUpdate ? path : `${acceptedPath} via ${path}`
@@ -507,6 +511,18 @@ const dataMap = new Map<string, any>()
 const customListenersMap: CustomListenersMap = new Map()
 const ctxToListenersMap = new Map<string, CustomListenersMap>()
 
+// b -> ownerPath = /src/App.vue
+// App.vue 中会被 vite:vue 添加上热更新代码如下：
+// import.meta.hot.accept((mod) => {
+//   if (!mod)
+//     return;
+//   const { default: updated, _rerender_only: _rerender_only2 } = mod;
+//   if (_rerender_only2) {
+//     __VUE_HMR_RUNTIME__.rerender(updated.__hmrId, updated.render);
+//   } else {
+//     __VUE_HMR_RUNTIME__.reload(updated.__hmrId, updated);
+//   }
+// });
 export function createHotContext(ownerPath: string): ViteHotContext {
   if (!dataMap.has(ownerPath)) {
     dataMap.set(ownerPath, {})
@@ -542,8 +558,8 @@ export function createHotContext(ownerPath: string): ViteHotContext {
       callbacks: [],
     }
     mod.callbacks.push({
-      deps,
-      fn: callback,
+      deps, // ['/src/App.vue']
+      fn: callback, // 传入 hot.accept(callback) 中的 callback
     })
     hotModulesMap.set(ownerPath, mod)
   }

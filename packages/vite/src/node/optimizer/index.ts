@@ -368,7 +368,6 @@ export async function loadCachedDepOptimizationMetadata(
         depsCacheDir,
       )
     } catch (e) {}
-    // TODO： hash 主要比对的事 *.lock 中内容是否相同
     if (cachedMetadata && cachedMetadata.hash === getDepHash(config, ssr)) {
       log?.('Hash is consistent. Skipping. Use --force to override.')
       // Nothing to commit or cancel as we are using the cache, we only
