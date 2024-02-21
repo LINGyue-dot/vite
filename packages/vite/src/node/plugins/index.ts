@@ -26,6 +26,7 @@ import { metadataPlugin } from './metadata'
 import { dynamicImportVarsPlugin } from './dynamicImportVars'
 import { importGlobPlugin } from './importMetaGlob'
 
+// @source 内置 plugins 解析
 export async function resolvePlugins(
   config: ResolvedConfig,
   prePlugins: Plugin[],

@@ -335,6 +335,14 @@ export function createServer(
   return _createServer(inlineConfig, { ws: true })
 }
 
+/**
+ * @source 创建整个服务所需要的所有配置信息
+ * 解析生成 vite config 期间执行 config configResolved hook
+ * 用 connect 创建 http server 并添加中间件以处理请求，同时借助 http server 创建 ws ，watch 相关文件用以处理 hmr 等。期间执行 configServer hook
+ * 将所有 module 数据存储在 ModuleGraph 上
+ *
+ * esbuild 依赖预构建 之后再开始 listen 服务器
+ */
 export async function _createServer(
   inlineConfig: InlineConfig = {},
   options: { ws: boolean },
@@ -342,6 +350,7 @@ export async function _createServer(
   // 加载 vite.config.js 等文件中配置以及加上内置的 plugins
   const config = await resolveConfig(inlineConfig, 'serve')
 
+  // -->
   const { root, server: serverConfig } = config
   const httpsOptions = await resolveHttpsConfig(config.server.https)
   const { middlewareMode } = serverConfig
@@ -356,7 +365,7 @@ export async function _createServer(
   const httpServer = middlewareMode
     ? null
     : await resolveHttpServer(serverConfig, middlewares, httpsOptions)
-  const ws = createWebSocketServer(httpServer, config, httpsOptions) // httpOPtions = undefined
+  const ws = createWebSocketServer(httpServer, config, httpsOptions) // httpOptions = undefined
 
   if (httpServer) {
     setClientErrorHandler(httpServer, config.logger)
@@ -375,7 +384,7 @@ export async function _createServer(
   const moduleGraph: ModuleGraph = new ModuleGraph((url, ssr) =>
     container.resolveId(url, undefined, { ssr }),
   )
-  //
+  // TODO!!! 调用了多次 createPluginContainer 是搞什么？
   const container = await createPluginContainer(config, moduleGraph, watcher)
   const closeHttpServer = createServerCloseFn(httpServer)
 
@@ -613,7 +622,7 @@ export async function _createServer(
   }
 
   // proxy
-  // TODO 看下 proxy 是怎么做的
+  // TODO 看下 proxy 是怎么做的 --> 应该是借助 http-proxy
   const { proxy } = serverConfig
   if (proxy) {
     middlewares.use(proxyMiddleware(httpServer, proxy, config))
@@ -689,12 +698,13 @@ export async function _createServer(
     if (initingServer) return initingServer
 
     initingServer = (async function () {
-      await container.buildStart({})
+      await container.buildStart({}) // 执行 plugin 的 buildStart hook
       // start deps optimizer after all container plugins are ready
+      // @source esbuild 预构建
       if (isDepsOptimizerEnabled(config, false)) {
         await initDepsOptimizer(config, server) // esbuild 预构建
       }
-      initingServer = undefined
+      initingServer = undefined // ??? 异步性，可能会并发，所以需要将前面的
       serverInited = true
     })()
     return initingServer
@@ -713,6 +723,7 @@ export async function _createServer(
         httpServer.emit('error', e)
         return
       }
+      // @warning 注意是预构建完成之后再进行的 http.listen
       return listen(port, ...args)
     }) as any
   } else {

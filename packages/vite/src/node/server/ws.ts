@@ -82,6 +82,9 @@ const wsServerEvents = [
   'message',
 ]
 
+/**
+ * @source 创建 ws 服务，依附在 http server 上
+ */
 export function createWebSocketServer(
   server: Server | null,
   config: ResolvedConfig,
@@ -107,12 +110,14 @@ export function createWebSocketServer(
     if (hmrPath) {
       hmrBase = path.posix.join(hmrBase, hmrPath)
     }
-    wss = new WebSocketServerRaw({ noServer: true })
+    wss = new WebSocketServerRaw({ noServer: true }) // 不创建独立的 ws 服务
+    // upgrade 协议升级为 ws
     wsServer.on('upgrade', (req, socket, head) => {
       if (
         req.headers['sec-websocket-protocol'] === HMR_HEADER &&
         req.url === hmrBase
       ) {
+        // 将 ws 服务手动绑定到原先服务上
         wss.handleUpgrade(req, socket as Socket, head, (ws) => {
           wss.emit('connection', ws, req)
         })

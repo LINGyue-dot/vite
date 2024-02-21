@@ -33,7 +33,7 @@ const debug = createDebugger('vite:deps')
  * a re-bundle + page reload
  */
 const debounceMs = 100
-
+// 应该是为了多个入口多个 config 而出现的缓存，一个 config 一个 esbuild 预构建
 const depsOptimizerMap = new WeakMap<ResolvedConfig, DepsOptimizer>()
 const devSsrDepsOptimizerMap = new WeakMap<ResolvedConfig, DepsOptimizer>()
 
@@ -54,7 +54,7 @@ export async function initDepsOptimizer(
 ): Promise<void> {
   // Non Dev SSR Optimizer config.command === server
   const ssr = config.command === 'build' && !!config.build.ssr
-  if (!getDepsOptimizer(config, ssr)) {
+  if (!getDepsOptimizer(config, ssr)) { // 这里是 memory cache
     await createDepsOptimizer(config, server)
   }
 }
@@ -162,11 +162,12 @@ async function createDepsOptimizer(
   // after each buildStart.
   // During dev, if this is a cold run, we wait for static imports discovered
   // from the first request before resolving to minimize full page reloads.
+  // 在开发期间，如果这是冷运行，我们将等待从第一个请求中发现的静态导入，然后再进行解析，以最大限度地减少整个页面的重新加载。
   // On warm start or after the first optimization is run, we use a simpler
   // debounce strategy each time a new dep is discovered.
   let crawlEndFinder: CrawlEndFinder | undefined
   if (isBuild || !cachedMetadata) {
-    crawlEndFinder = setupOnCrawlEnd(onCrawlEnd)
+    crawlEndFinder = setupOnCrawlEnd(onCrawlEnd) // 暂时还不知道这个什么作用
   }
 
   let optimizationResult:
@@ -200,8 +201,8 @@ async function createDepsOptimizer(
     // Initialize discovered deps with manually added optimizeDeps.include info
 
     const deps: Record<string, string> = {}
-    await addManuallyIncludedOptimizeDeps(deps, config, ssr)
-    // 查找自定义的缓存依赖 --> 构建出 依赖-绝对路径 map
+    await addManuallyIncludedOptimizeDeps(deps, config, ssr) // 寻找 config 中指明的 optimize deps
+    // 查找自定义的缓存依赖 --> 构建出 依赖-对象
     const discovered = toDiscoveredDependencies(
       config,
       deps,

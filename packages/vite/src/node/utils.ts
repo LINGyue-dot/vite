@@ -125,7 +125,7 @@ export function moduleListContains(
 ): boolean | undefined {
   return moduleList?.some((m) => m === id || id.startsWith(m + '/'))
 }
-
+// 是否可以 optimize 预构建的？文件后缀为 ts/js 才可以
 export function isOptimizable(
   id: string,
   optimizeDeps: DepOptimizationConfig,
@@ -385,7 +385,7 @@ export function isDefined<T>(value: T | undefined | null): value is T {
 
 export function tryStatSync(file: string): fs.Stats | undefined {
   try {
-    return fs.statSync(file, { throwIfNoEntry: false })
+    return fs.statSync(file, { throwIfNoEntry: false }) // 同步获取文件信息
   } catch {
     // Ignore errors
   }

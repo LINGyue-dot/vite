@@ -599,6 +599,7 @@ export async function createPluginContainer(
   let closed = false
   const processesing = new Set<Promise<any>>()
   // keeps track of hook promises so that we can wait for them all to finish upon closing the server
+  // 记录 promise 以完成之后再关闭 server
   function handleHookPromise<T>(maybePromise: undefined | T | Promise<T>) {
     if (!(maybePromise as any)?.then) {
       return maybePromise
@@ -609,6 +610,7 @@ export async function createPluginContainer(
   }
 
   const container: PluginContainer = {
+    // rollupOptions 或是 meta 数据，一般 options hook 用于记录和错误
     options: await (async () => {
       let options = rollupOptions // {} -> void object
       for (const optionsHook of getSortedPluginHooks('options')) {
@@ -637,7 +639,7 @@ export async function createPluginContainer(
     async buildStart() {
       await handleHookPromise(
         hookParallel(
-          'buildStart',
+          'buildStart', // 这个阶段一般是获取 plugin config
           (plugin) => new Context(plugin),
           () => [container.options as NormalizedInputOptions],
         ),

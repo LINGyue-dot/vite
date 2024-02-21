@@ -93,7 +93,7 @@ export function scanImports(config: ResolvedConfig): {
     return prepareEsbuildScanner(config, entries, deps, missing, scanContext)
   })
 
-  // esbuildContex 时候会加载
+  // esbuildContext 时候会加载
   const result = esbuildContext
     .then((context) => {
       function disposeContext() {
@@ -108,9 +108,10 @@ export function scanImports(config: ResolvedConfig): {
       }
       return (
         context
-          //
+          // @source esbuild 构建
           .rebuild()
           .then(() => {
+            // @time -->
             return {
               // Ensure a fixed order so hashes are stable and improve logs
               deps: orderedDependencies(deps),
@@ -200,7 +201,7 @@ async function computeEntries(config: ResolvedConfig) {
 
   return entries
 }
-// 初始化 esbuild 插件
+// 初始化 esbuild 插件，同时利用 esbuild.context 创建构建上下文
 async function prepareEsbuildScanner(
   config: ResolvedConfig,
   entries: string[],
@@ -208,16 +209,16 @@ async function prepareEsbuildScanner(
   missing: Record<string, string>,
   scanContext?: { cancelled: boolean },
 ): Promise<BuildContext | undefined> {
-  // vite plugin container 初始化
+  // TODO!!! 这里为什么又生成个新的 container vite plugin container 初始化
   const container = await createPluginContainer(config)
 
   if (scanContext?.cancelled) return
 
-  const plugin = esbuildScanPlugin(config, container, deps, missing, entries)
+  const plugin = esbuildScanPlugin(config, container, deps, missing, entries) // vite:scan 插件
 
   const { plugins = [], ...esbuildOptions } =
     config.optimizeDeps?.esbuildOptions ?? {}
-  // !!! esbuild.context 不是打包，只能算是预构建，会得到 三方包-绝对路径的 map
+  // !!! esbuild.context 不是打包，只是长时间运行的构建上下文
   // 会将数据存在 context 中，调用 context.rebuild() 会进行增量构建
   // 第二次打包在 packages/vite/src/node/optimizer/index.ts#787 其中会对 vue 等三方包进行打包并生成在 /node_modules/.vite/dep/vue.js
   // 其中就会执行 esbuildScanPlugin 中的 plugins
@@ -439,7 +440,7 @@ function esbuildScanPlugin(
             let loader: Loader = 'js'
             if (lang === 'ts' || lang === 'tsx' || lang === 'jsx') {
               loader = lang
-            } else if (path.endsWith('.astro')) {
+            } else if (path.endsWith('.astro')) { // 单独服务 astro
               loader = 'ts'
             }
             const srcMatch = openTag.match(srcRE)
@@ -459,8 +460,8 @@ function esbuildScanPlugin(
 
               // append imports in TS to prevent esbuild from removing them
               // since they may be used in the template
-              // 再添加上 import './components/HelloWorld.vue''
-              // 变成了 'import HelloWorld from './components/HelloWorld.vue' \n import './components/HelloWorld.vue' 防止被擦除
+              // 再添加上 import './components/HelloWorld.ts''
+              // 变成了 'import HelloWorld from './components/HelloWorld.ts' \n import './components/HelloWorld.ts' 防止被擦除
               const contents =
                 content +
                 (loader.startsWith('ts') ? extractImportPaths(content) : '')
@@ -489,7 +490,7 @@ function esbuildScanPlugin(
                 virtualModulePrefix + key,
               )
 
-              const contextMatch = openTag.match(contextRE)
+              const contextMatch = openTag.match(contextRE) // 似乎是 .svelte 文件专属属性 context
               const context =
                 contextMatch &&
                 (contextMatch[1] || contextMatch[2] || contextMatch[3])
@@ -517,7 +518,7 @@ function esbuildScanPlugin(
           }
           // 入口文件index.html 引入的 main.ts loader 仍然是 js
           // 而 .vue 文件中 lang = ts 的 loader 就是 ts
-          // TODO 那么不添加 script lang = ts 且在 main.ts 中不添加 ts 类型可以吗？--> 应该是不行的
+          // 那么不添加 script lang = ts 且在 main.ts 中不添加 ts 类型可以吗？--> 应该是不行的
           return {
             loader: 'js',
             contents: js,

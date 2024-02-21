@@ -388,6 +388,11 @@ export type ResolveFn = (
   ssr?: boolean,
 ) => Promise<string | undefined>
 
+/**
+ * @source 处理路径问题，获取对应的 config ，同时 worker 的 config 需要单独处理
+ * 同时生成后续执行所需要的 config ，包括内置 plugin 与 user plugin 配置与 server config
+ * 在其中执行 config plugin 与 worker plugin 的 config configResolved 钩子函数
+ */
 export async function resolveConfig(
   inlineConfig: InlineConfig,
   command: 'build' | 'serve',
@@ -412,7 +417,7 @@ export async function resolveConfig(
     ssrBuild: !!config.build?.ssr,
   }
 
-  let { configFile } = config
+  let { configFile } = config // undefined
   if (configFile !== false) {
     const loadResult = await loadConfigFromFile(
       configEnv,
@@ -485,7 +490,7 @@ export async function resolveConfig(
   const resolvedRoot = normalizePath(
     config.root ? path.resolve(config.root) : process.cwd(),
   )
-
+ // 路径别名，这里是内置的
   const clientAlias = [
     {
       find: /^\/?@vite\/env/,
@@ -590,7 +595,7 @@ export async function resolveConfig(
           }))
       } else {
         container =
-          resolverContainer ||
+          resolverContainer || // TODO!!! 调用了两次 createPluginContainer，和 config.pluginContainer 有什么区别，为什么要分为两次
           (resolverContainer = await createPluginContainer({
             ...resolved,
             plugins: [
@@ -606,7 +611,7 @@ export async function resolveConfig(
                 tryIndex: true,
                 ...options,
                 idOnly: true,
-              }),
+              }), // 添加 vite:resolve plugin
             ],
           }))
       }
@@ -661,7 +666,7 @@ export async function resolveConfig(
     getSortedPlugins: undefined!,
     getSortedPluginHooks: undefined!,
   }
-
+  // @tips resolvedConfig --> 已解析配置
   const resolvedConfig: ResolvedConfig = {
     configFile: configFile ? normalizePath(configFile) : undefined,
     configFileDependencies: configFileDependencies.map((name) =>
@@ -938,7 +943,7 @@ export async function loadConfigFromFile(
     return null
   }
 
-  let isESM = false
+  let isESM = false // vite.config 后缀或者是 package.json 中声明进行推测是否是 esm
   if (/\.m[jt]s$/.test(resolvedPath)) {
     isESM = true
   } else if (/\.c[jt]s$/.test(resolvedPath)) {
@@ -953,6 +958,7 @@ export async function loadConfigFromFile(
   }
 
   try {
+    // 用 esbuild 执行 vite.config.ts 文件并获取其中 config 对象
     const bundled = await bundleConfigFile(resolvedPath, isESM)
     const userConfig = await loadConfigFromBundledFile(
       resolvedPath,
@@ -970,7 +976,7 @@ export async function loadConfigFromFile(
     return {
       path: normalizePath(resolvedPath),
       config,
-      dependencies: bundled.dependencies,
+      dependencies: bundled.dependencies, // ??? 这里的 dependencies 有些什么 ，可能是一些外部 import ? 应该是 esbuild 解析出来的
     }
   } catch (e) {
     createLogger(logLevel).error(
@@ -980,9 +986,9 @@ export async function loadConfigFromFile(
     throw e
   }
 }
-
+// @source 这里是在初始化 config 的时候需要用 esbuild vite.config.ts 文件
 async function bundleConfigFile(
-  fileName: string,
+  fileName: string, // /Users/chenshunze/Desktop/source-code/vite/playground/react-ts/vite.config.ts
   isESM: boolean,
 ): Promise<{ code: string; dependencies: string[] }> {
   const dirnameVarName = '__vite_injected_original_dirname'
@@ -1158,7 +1164,7 @@ async function loadConfigFromBundledFile(
       const configTimestamp = `${fileName}.timestamp:${Date.now()}-${Math.random()
         .toString(16)
         .slice(2)}`
-      return (
+      return ( // --> import 'data:text/xxxxxxxxx' 以 URI 形式引入内容。用于引入 esbuild bundle 之后的内容
         await dynamicImport(
           'data:text/javascript;base64,' +
             Buffer.from(`${bundledCode}\n//${configTimestamp}`).toString(

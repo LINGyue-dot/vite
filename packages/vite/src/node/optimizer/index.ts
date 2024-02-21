@@ -328,7 +328,7 @@ export function initDepsOptimizerMetadata(
 
 export function addOptimizedDepInfo(
   metadata: DepOptimizationMetadata,
-  type: 'optimized' | 'discovered' | 'chunks',
+  type: 'optimized' | 'discovered' | 'chunks', // TODO!!! 这里的 type 的 chunk optimized 是什么意思？
   depInfo: OptimizedDepInfo,
 ): OptimizedDepInfo {
   metadata[type][depInfo.id] = depInfo
@@ -352,7 +352,8 @@ export async function loadCachedDepOptimizationMetadata(
 
   if (firstLoadCachedDepOptimizationMetadata) {
     firstLoadCachedDepOptimizationMetadata = false
-    // Fire up a clean up of stale processing deps dirs if older process exited early。利用异步来在中途退出时候清空未完整生成的 cache
+    // Fire up a clean up of stale processing deps dirs if older process exited early。
+    // TODO!!! 如果旧进程提前退出，则启动对过时处理缓存目录的清理
     setTimeout(() => cleanupDepsCacheStaleDirs(config), 0)
   }
   // /node_modules/.vite/deps
@@ -420,7 +421,7 @@ export function toDiscoveredDependencies(
   ssr: boolean,
   timestamp?: string,
 ): Record<string, OptimizedDepInfo> {
-  const browserHash = getOptimizedBrowserHash(
+  const browserHash = getOptimizedBrowserHash( // ??? 还不懂这个 browserHash 是做什么用的
     getDepHash(config, ssr),
     deps,
     timestamp,
@@ -430,10 +431,10 @@ export function toDiscoveredDependencies(
     const src = deps[id]
     discovered[id] = {
       id,
-      file: getOptimizedDepPath(id, config, ssr),
+      file: getOptimizedDepPath(id, config, ssr), // 缓存位置的绝对路径 /Users/chenshunze/Desktop/source-code/vite/playground/react-ts/node_modules/.vite/deps/react.js
       src,
       browserHash: browserHash,
-      exportsData: extractExportsData(src, config, ssr),
+      exportsData: extractExportsData(src, config, ssr), // 词法分析获取文件内容得出 exports imports 等数据
     }
   }
   return discovered
@@ -831,6 +832,9 @@ export async function findKnownImports(
   return Object.keys(deps)
 }
 
+/**
+ * 获取 config optimize include 如 ['react','react/jsx-dev-runtime'] 中的对应的 resolveId 即绝对文件地址。并将其以 name: 绝对地址格式存储在 deps 对象中
+ */
 export async function addManuallyIncludedOptimizeDeps(
   deps: Record<string, string>,
   config: ResolvedConfig,
@@ -839,7 +843,7 @@ export async function addManuallyIncludedOptimizeDeps(
   filter?: (id: string) => boolean,
 ): Promise<void> {
   const { logger } = config
-  const optimizeDeps = getDepOptimizationConfig(config, ssr)
+  const optimizeDeps = getDepOptimizationConfig(config, ssr) // { disabled:false,include:['react','react/jsx-dev-runtime']} --> 是被 vite-plugin-react 中的 Config 添加的
   const optimizeDepsInclude = optimizeDeps?.include ?? []
   if (optimizeDepsInclude.length || extra.length) {
     const unableToOptimize = (id: string, msg: string) => {
@@ -868,7 +872,7 @@ export async function addManuallyIncludedOptimizeDeps(
       // and for pretty printing
       const normalizedId = normalizeId(id)
       if (!deps[normalizedId] && filter?.(normalizedId) !== false) {
-        const entry = await resolve(id)
+        const entry = await resolve(id) // 找到对应 id/包 的绝对路径
         if (entry) {
           if (isOptimizable(entry, optimizeDeps)) {
             if (!entry.endsWith('?__vite_skip_optimization')) {
@@ -1097,6 +1101,9 @@ function esbuildOutputFromId(
   }
 }
 
+/**
+ * 利用 es-module-lexer 词法分析器提取 import exports 的数据，并 return 出该数据
+ */
 export async function extractExportsData(
   filePath: string,
   config: ResolvedConfig,
@@ -1200,7 +1207,7 @@ const lockfileFormats = [
 const lockfileNames = lockfileFormats.map((l) => l.name)
 
 /**
- * !!! cache here 将 *.lock + patch 文件的修改时间 node_module 内文件修改时间 + vite.config + node_env 转为 hash
+ * @source cache here 将 *.lock + patch 文件的修改时间 node_module 内文件修改时间 + vite.config + node_env 转为 hash
  * @returns
  */
 export function getDepHash(config: ResolvedConfig, ssr: boolean): string {

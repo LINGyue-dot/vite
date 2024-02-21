@@ -141,7 +141,7 @@ export function resolvePlugin(resolveOptions: InternalResolveOptions): Plugin {
   // avoid these checks. Absolute paths inside root are common in user code as many
   // paths are resolved by the user. For example for an alias.
   const rootInRoot = tryStatSync(path.join(root, root))?.isDirectory() ?? false
-
+  // Vite 路径解析插件
   return {
     name: 'vite:resolve',
 
