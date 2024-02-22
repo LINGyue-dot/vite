@@ -54,7 +54,8 @@ export async function initDepsOptimizer(
 ): Promise<void> {
   // Non Dev SSR Optimizer config.command === server
   const ssr = config.command === 'build' && !!config.build.ssr
-  if (!getDepsOptimizer(config, ssr)) { // 这里是 memory cache
+  if (!getDepsOptimizer(config, ssr)) {
+    // 这里是 memory cache
     await createDepsOptimizer(config, server)
   }
 }

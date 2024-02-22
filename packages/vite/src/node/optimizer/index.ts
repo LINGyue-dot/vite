@@ -421,7 +421,8 @@ export function toDiscoveredDependencies(
   ssr: boolean,
   timestamp?: string,
 ): Record<string, OptimizedDepInfo> {
-  const browserHash = getOptimizedBrowserHash( // ??? 还不懂这个 browserHash 是做什么用的
+  const browserHash = getOptimizedBrowserHash(
+    // ??? 还不懂这个 browserHash 是做什么用的
     getDepHash(config, ssr),
     deps,
     timestamp,

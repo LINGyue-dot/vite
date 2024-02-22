@@ -269,12 +269,18 @@ const langRE = /\blang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/i
 const contextRE = /\bcontext\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/i
 
 /**
- * 构建 esbuild 插件，内部主要根据文件来进行添加 import 以及定位到绝对路径
+ * 构建 esbuild 插件，插件内部借助 vite:resolve 来获取绝对地址，同时深度遍历来 external 所有的模块
+ * esbuild 插件 onResolve 负责解析 import from 'xxx' ，onLoad 是在 esbuild 解析模块之前调用，用于处理并返回模块内容并告诉 esbuild 用哪个 loader 进行解析等
+ * 整个预构建扫描过程如下：
+ * 1. 入口 index.html 经过 onResolve 函数，通过 vite plugins vite:resolve 获取绝对地址并传递给 onLoad
+ * 2. 传递到 onLoad ，对 script 标签进行处理（添加 export default {} 等）
+ * 3. 此时 main.ts 会被 esbuild 解析
+ * 4. main.ts 中的 import from 'react' 会被 onResolve 函数进行处理，同理调用 vite:resolve 转换为绝对地址 ，但此时发现 optimize.includes 里面有这个包，所以会 return { external:true } 后续就不会被传入 onLoad 函数继续深度遍历
  */
 function esbuildScanPlugin(
   config: ResolvedConfig,
   container: PluginContainer,
-  // key-value -> 包名称 - 绝对路径
+  // 预构建包 map ： key-value -> 包名称 - 绝对路径
   depImports: Record<string, string>,
   missing: Record<string, string>,
   entries: string[],
@@ -328,7 +334,7 @@ function esbuildScanPlugin(
     } else {
       transpiledContents = contents
     }
-
+  // TODO!!! 这里是做了什么？看起来似乎是做了转换为绝对路径
     const result = await transformGlobImport(
       transpiledContents,
       id,
@@ -352,6 +358,7 @@ function esbuildScanPlugin(
       build.onResolve({ filter: externalRE }, ({ path }) => ({
         path,
         external: true,
+      // 每个未标记为 external:true 的唯一路径/命名空间的文件都会触发 onLoad hook
       }))
 
       // data urls
@@ -440,7 +447,8 @@ function esbuildScanPlugin(
             let loader: Loader = 'js'
             if (lang === 'ts' || lang === 'tsx' || lang === 'jsx') {
               loader = lang
-            } else if (path.endsWith('.astro')) { // 单独服务 astro
+            } else if (path.endsWith('.astro')) {
+              // 单独服务 astro
               loader = 'ts'
             }
             const srcMatch = openTag.match(srcRE)
@@ -530,6 +538,7 @@ function esbuildScanPlugin(
       build.onResolve(
         {
           // avoid matching windows volume
+          // 匹配 @ \w 开头不包含冒号。如 useHook 或者 vue
           filter: /^[\w@][^:]/,
         },
         // 此时解析 import Vue from 'vue'
@@ -551,14 +560,14 @@ function esbuildScanPlugin(
             if (shouldExternalizeDep(resolved, id)) {
               return externalUnlessEntry({ path: id })
             }
-            //
+            // 三方需预构建模块
             if (isInNodeModules(resolved) || include?.includes(id)) {
               // dependency or forced included, externalize and stop crawling
               if (isOptimizable(resolved, config.optimizeDeps)) {
                 //
                 depImports[id] = resolved
               }
-              return externalUnlessEntry({ path: id })
+              return externalUnlessEntry({ path: id }) // return { path , external:true } --> 不会传递给 onLoad
             } else if (isScannable(resolved)) {
               const namespace = htmlTypesRE.test(resolved) ? 'html' : undefined
               // linked package, keep crawling
@@ -704,7 +713,7 @@ function shouldExternalizeDep(resolvedId: string, rawId: string): boolean {
   if (!path.isAbsolute(resolvedId)) {
     return true
   }
-  // virtual id
+  // virtual id ，虚拟模块有些会添加前缀 \0 ，因为 \0 字符在引入 url 的时候是不被允许的
   if (resolvedId === rawId || resolvedId.includes('\0')) {
     return true
   }

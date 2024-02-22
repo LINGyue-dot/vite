@@ -1,4 +1,3 @@
-
 export interface ComponentAProps {}
 const ComponentA: React.FC<ComponentAProps> = () => {
   return (

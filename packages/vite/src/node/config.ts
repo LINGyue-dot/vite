@@ -490,7 +490,7 @@ export async function resolveConfig(
   const resolvedRoot = normalizePath(
     config.root ? path.resolve(config.root) : process.cwd(),
   )
- // 路径别名，这里是内置的
+  // 路径别名，这里是内置的
   const clientAlias = [
     {
       find: /^\/?@vite\/env/,
@@ -1164,14 +1164,17 @@ async function loadConfigFromBundledFile(
       const configTimestamp = `${fileName}.timestamp:${Date.now()}-${Math.random()
         .toString(16)
         .slice(2)}`
-      return ( // --> import 'data:text/xxxxxxxxx' 以 URI 形式引入内容。用于引入 esbuild bundle 之后的内容
-        await dynamicImport(
-          'data:text/javascript;base64,' +
-            Buffer.from(`${bundledCode}\n//${configTimestamp}`).toString(
-              'base64',
-            ),
-        )
-      ).default
+      return (
+        // --> import 'data:text/xxxxxxxxx' 以 URI 形式引入内容。用于引入 esbuild bundle 之后的内容
+        (
+          await dynamicImport(
+            'data:text/javascript;base64,' +
+              Buffer.from(`${bundledCode}\n//${configTimestamp}`).toString(
+                'base64',
+              ),
+          )
+        ).default
+      )
     } catch (e) {
       throw new Error(`${e.message} at ${fileName}`)
     }
