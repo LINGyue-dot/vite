@@ -176,6 +176,8 @@ async function handleMessage(payload: HMRPayload) {
             return queueUpdate(fetchUpdate(update))
           }
 
+          // CSS 更新
+          // 使用 url + v = 时间戳进行获取
           // css-update
           // this is only sent when a css file referenced with <link> is updated
           const { path, timestamp } = update
@@ -310,13 +312,14 @@ let queued: Promise<(() => void) | undefined>[] = []
 /**
  * buffer multiple hot updates triggered by the same src change
  * so that they are invoked in the same order they were sent.
- * (otherwise the order may be inconsistent because of the http request round trip)
+ * (otherwise the order may be inconsistent because of the http request round trip) // 否则由于 http 往返可能导致顺序不对
+ * 保证按原来顺序执行
  */
 async function queueUpdate(p: Promise<(() => void) | undefined>) {
   queued.push(p)
   if (!pending) {
     pending = true
-    await Promise.resolve()
+    await Promise.resolve() // 下个 micro task 执行
     pending = false
     const loading = [...queued]
     queued = []
@@ -431,6 +434,12 @@ export function removeStyle(id: string): void {
   }
 }
 
+/**
+ * 更新 JS-update 类型文件
+ * 根据服务端传入的 acceptPath path 以及文件是否定义 import.hot.accept 等传入函数进行决定执行不同策略
+ * 1. isSelfUpdate = true ，重新请求该文件代码，调用 dispose 函数（看作是 destroy hook ），同时调用传入的 accept 函数
+ * 2. =false ，执行自定义传入的 import.hot.accept 等回调函数
+ */
 async function fetchUpdate({
   path,
   acceptedPath,
@@ -448,16 +457,23 @@ async function fetchUpdate({
   }
 
   let fetchedModule: ModuleNamespace | undefined
+  // 只有 importer.acceptedHmrDeps.has(node) 时候，path = importer ，acceptPath = node 才为 false ，即 importer 有做对变化文件的回调函数
+  // acceptedHmrDeps 本质就是获取 import.meta.hot.accept(xxx) 的监听模块
+  // acceptedHmrExports 本质就是获取 import.meta.hot.acceptExports(xxx) 的监听模块
+  // 在服务端，那到 acceptedHmrDeps 是在 vite:import-analysis 中用正则进行获取参数的
+
   const isSelfUpdate = path === acceptedPath // true
 
   // determine the qualified callbacks before we re-import the modules
+  // mod.callbacks 的数据类型是 HotCallback
+  // 所以 import.meta.hot.accept(['a','b'],cb) 就是 {deps:['a','b',] , callback: cb }
   const qualifiedCallbacks = mod.callbacks.filter(({ deps }) =>
     deps.includes(acceptedPath),
   )
 
   if (isSelfUpdate || qualifiedCallbacks.length > 0) {
     const disposer = disposeMap.get(acceptedPath)
-    if (disposer) await disposer(dataMap.get(acceptedPath))
+    if (disposer) await disposer(dataMap.get(acceptedPath)) // 执行 dispose 函数
     const [acceptedPathWithoutQuery, query] = acceptedPath.split(`?`)
     try {
       // 重新请求获取 module ，由于此时 transform 生成的 etag 与旧的 if-no-modify 不同，所以 304 失败
@@ -523,13 +539,14 @@ const ctxToListenersMap = new Map<string, CustomListenersMap>()
 //     __VUE_HMR_RUNTIME__.reload(updated.__hmrId, updated);
 //   }
 // });
+// 热更新 context
 export function createHotContext(ownerPath: string): ViteHotContext {
   if (!dataMap.has(ownerPath)) {
     dataMap.set(ownerPath, {})
   }
 
   // when a file is hot updated, a new context is created
-  // clear its stale callbacks
+  // clear its stale callbacks --> 不新鲜/过期回调函数
   const mod = hotModulesMap.get(ownerPath)
   if (mod) {
     mod.callbacks = []
@@ -557,6 +574,7 @@ export function createHotContext(ownerPath: string): ViteHotContext {
       id: ownerPath,
       callbacks: [],
     }
+    // @source hmr 回调函数存储
     mod.callbacks.push({
       deps, // ['/src/App.vue']
       fn: callback, // 传入 hot.accept(callback) 中的 callback

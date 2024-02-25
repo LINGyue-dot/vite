@@ -163,12 +163,14 @@ async function createDepsOptimizer(
   // after each buildStart.
   // During dev, if this is a cold run, we wait for static imports discovered
   // from the first request before resolving to minimize full page reloads.
-  // 在开发期间，如果这是冷运行，我们将等待从第一个请求中发现的静态导入，然后再进行解析，以最大限度地减少整个页面的重新加载。
+  // 在开发期间，如果这是冷运行，我们将等待从第一个请求中发现的静态导入，然后再进行解析，以最大限度地减少整个页面的重新加载。减少页面 reload
   // On warm start or after the first optimization is run, we use a simpler
   // debounce strategy each time a new dep is discovered.
+  // warm start 的话就会防抖执行，当一个 dep 发现时候，防抖一段时间之后才会触发页面 reload
   let crawlEndFinder: CrawlEndFinder | undefined
   if (isBuild || !cachedMetadata) {
-    crawlEndFinder = setupOnCrawlEnd(onCrawlEnd) // 暂时还不知道这个什么作用
+    // 什么时候被主动调用？
+    crawlEndFinder = setupOnCrawlEnd(onCrawlEnd)
   }
 
   let optimizationResult:
@@ -210,7 +212,7 @@ async function createDepsOptimizer(
       ssr,
       sessionTimestamp,
     )
-
+    //
     for (const depInfo of Object.values(discovered)) {
       addOptimizedDepInfo(metadata, 'discovered', {
         ...depInfo,
@@ -218,7 +220,8 @@ async function createDepsOptimizer(
       })
       newDepsDiscovered = true
     }
-
+    // noDiscovery 应该是开放给专业开发者（没有开放在文档中）
+    // 即不进行深度遍历（第一次 esbuild 预构建）
     if (config.optimizeDeps.noDiscovery) {
       // We don't need to scan for dependencies or wait for the static crawl to end
       // Run the first optimization run immediately
@@ -231,6 +234,7 @@ async function createDepsOptimizer(
           try {
             debug?.(colors.green(`scanning for dependencies...`))
             // 用 esbuild 对引入文件进行递归索引，并将 三方包-绝对路径 的 map 返回
+            // @source esbuild 第一次预构建
             discover = discoverProjectDependencies(config)
             // deps 就是三方包和绝对路径的 key-value
             const deps = await discover.result
@@ -245,13 +249,14 @@ async function createDepsOptimizer(
                 addMissingDep(id, deps[id])
               }
             }
-
+            // 这个函数应该是读取现有缓存
             const knownDeps = prepareKnownDeps()
 
             // For dev, we run the scanner and the first optimization
             // run on the background, but we wait until crawling has ended
             // to decide if we send this result to the browser or we need to
             // do another optimize step
+            // @source esbuild 第二次预构建，注意是 promise 其实只是开始但没有await
             optimizationResult = runOptimizeDeps(config, knownDeps)
           } catch (e) {
             logger.error(e.stack || e.message)
@@ -609,12 +614,9 @@ async function createDepsOptimizer(
     }, timeout)
   }
 
-  // During dev, onCrawlEnd is called once when the server starts and all static
-  // imports after the first request have been crawled (dynamic imports may also
-  // be crawled if the browser requests them right away).
-  // During build, onCrawlEnd will be called once after each buildStart (so in
-  // watch mode it will be called after each rebuild has processed every module).
-  // All modules are transformed first in this case (both static and dynamic).
+  // During dev, onCrawlEnd is called once when the server starts and all static  imports after the first request have been crawled (dynamic imports may also be crawled if the browser requests them right away).
+  // During build, onCrawlEnd will be called once after each buildStart (so in  watch mode it will be called after each rebuild has processed every module). All modules are transformed first in this case (both static and dynamic).
+  // dev 情况下
   async function onCrawlEnd() {
     // On build time, a missing dep appearing after onCrawlEnd is an internal error
     // On dev, switch after this point to a simple debounce strategy

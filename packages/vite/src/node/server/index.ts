@@ -384,7 +384,7 @@ export async function _createServer(
   const moduleGraph: ModuleGraph = new ModuleGraph((url, ssr) =>
     container.resolveId(url, undefined, { ssr }),
   )
-  // TODO!!! 调用了多次 createPluginContainer 是搞什么？
+  // TODO!!! 调用了多次 createPluginContainer 是搞什么？--> 猜测是不同插件的需要
   const container = await createPluginContainer(config, moduleGraph, watcher)
   const closeHttpServer = createServerCloseFn(httpServer)
 
@@ -622,7 +622,7 @@ export async function _createServer(
   }
 
   // proxy
-  // TODO 看下 proxy 是怎么做的 --> 应该是借助 http-proxy
+  // 借助 http-proxy
   const { proxy } = serverConfig
   if (proxy) {
     middlewares.use(proxyMiddleware(httpServer, proxy, config))
@@ -656,7 +656,7 @@ export async function _createServer(
   }
 
   // main transform middleware
-  // -->
+  // @source 主要的 transform 逻辑
   middlewares.use(transformMiddleware(server))
 
   // serve static files
@@ -675,6 +675,7 @@ export async function _createServer(
 
   if (config.appType === 'spa' || config.appType === 'mpa') {
     // transform index.html
+    // 给 index.html 文件添加上 script src = '@vite/client' 代码
     middlewares.use(indexHtmlMiddleware(server))
 
     // handle 404s
@@ -702,7 +703,7 @@ export async function _createServer(
       // start deps optimizer after all container plugins are ready
       // @source esbuild 预构建
       if (isDepsOptimizerEnabled(config, false)) {
-        await initDepsOptimizer(config, server) // esbuild 预构建
+        await initDepsOptimizer(config, server) // esbuild 两次预构建
       }
       initingServer = undefined // ??? 异步性，可能会并发，所以需要将前面的
       serverInited = true
@@ -723,7 +724,6 @@ export async function _createServer(
         httpServer.emit('error', e)
         return
       }
-      // @warning 注意是预构建完成之后再进行的 http.listen
       return listen(port, ...args)
     }) as any
   } else {

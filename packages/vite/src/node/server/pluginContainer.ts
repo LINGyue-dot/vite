@@ -748,6 +748,7 @@ export async function createPluginContainer(
       return null
     },
     // 加载所有插件进行转换文件内容，resolveId 是有一个 result 就可以
+    // 处理 ts tsx jsx 的是 esbuild 插件
     async transform(code, id, options) {
       const inMap = options?.inMap
       const ssr = options?.ssr

@@ -244,8 +244,10 @@ export function watchPackageDataPlugin(packageCache: PackageCache): Plugin {
     buildEnd() {
       watchFile = watchFileStub
     },
+    // rollup 插件 hook
     watchChange(id) {
       if (id.endsWith('/package.json')) {
+        // @source package.json 变化触发这个
         invalidatePackageData(packageCache, path.normalize(id))
       }
     },

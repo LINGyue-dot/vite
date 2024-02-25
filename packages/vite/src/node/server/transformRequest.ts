@@ -121,7 +121,7 @@ async function doTransform(
   options: TransformOptions,
   timestamp: number,
 ) {
-  url = removeTimestampQuery(url)
+  url = removeTimestampQuery(url) // a. /@vite/client
 
   const { config, pluginContainer } = server
   const prettyUrl = debugCache ? prettifyUrl(url, config.root) : ''
@@ -131,7 +131,6 @@ async function doTransform(
 
   // check if we have a fresh cache
   // 是否有缓存
-  // TODO module.transformResult 这个缓存是什么东西
   const cached =
     module && (ssr ? module.ssrTransformResult : module.transformResult)
   //
@@ -170,6 +169,12 @@ async function doTransform(
   return result
 }
 
+/**
+ * load 读取文件内容
+ * transform 转换文件内容
+ * load 和 transform 本质上都是通过 vite plugin 进行 load transform
+ * 并在 load 之后创建缓存，并开启 watcher
+ */
 async function loadAndTransform(
   id: string, // 绝对路径
   url: string,
@@ -192,7 +197,7 @@ async function loadAndTransform(
 
   // load
   const loadStart = debugLoad ? performance.now() : 0
-  // 读取文件内容
+  // 读取文件内容，一般都是 null ，部分如读取 .vue 的 style 需要进行额外处理的
   const loadResult = await pluginContainer.load(id, { ssr })
   if (loadResult == null) {
     // '/Users/chenshunze/Desktop/source-code/vite/packages/vite/dist/client/client.mjs' 没有被 plugin load 处理直接返回 null
@@ -267,7 +272,7 @@ async function loadAndTransform(
   if (server._restartPromise) throwClosedServerError()
 
   // ensure module in graph after successful load
-  // 创建缓存
+  // @source 创建内存缓存 --> module 的缓存
   mod ??= await moduleGraph._ensureEntryFromUrl(url, ssr, undefined, resolved)
   ensureWatchedFile(watcher, mod.file, root)
 

@@ -318,7 +318,7 @@ export function initDepsOptimizerMetadata(
   const hash = getDepHash(config, ssr) // 生成对应的 hash
   return {
     hash,
-    browserHash: getOptimizedBrowserHash(hash, {}, timestamp), // 目前看起来没有什么用
+    browserHash: getOptimizedBrowserHash(hash, {}, timestamp), // 这个是预依赖请求携带的 query --> 如 react?v=browserHash 来看是否命中强缓存
     optimized: {},
     chunks: {},
     discovered: {},
@@ -328,6 +328,10 @@ export function initDepsOptimizerMetadata(
 
 export function addOptimizedDepInfo(
   metadata: DepOptimizationMetadata,
+  // @source
+  // optimized 在深度遍历的时候找到的。只要是在 node_modules dir 下的也会被添加到下方
+  // chunks 是 「依赖的共同依赖」 ，会被 esbuild 打成单独的文件去
+  // discovered  指的是在 Vite 构建过程中，通过扫描源代码文件，发现的所有依赖项（例如模块、文件等）。这些依赖项可能是 JavaScript 模块、CSS 文件、图片等。最后如果被 optimized 了就会被移动到 optimized 中
   type: 'optimized' | 'discovered' | 'chunks', // TODO!!! 这里的 type 的 chunk optimized 是什么意思？
   depInfo: OptimizedDepInfo,
 ): OptimizedDepInfo {
@@ -386,6 +390,8 @@ export async function loadCachedDepOptimizationMetadata(
 /**
  * Initial optimizeDeps at server start. Perform a fast scan using esbuild to
  * find deps to pre-bundle and include user hard-coded dependencies
+ * 用 esbuild plugin vite:dep-scan 深度遍历寻找需要预构建的包
+ * esbuild 第一次预构建
  */
 export function discoverProjectDependencies(config: ResolvedConfig): {
   cancel: () => Promise<void>
@@ -448,6 +454,8 @@ export function depsLogString(qualifiedIds: string[]): string {
 /**
  * Internally, Vite uses this function to prepare a optimizeDeps run. When Vite starts, we can get
  * the metadata and start the server without waiting for the optimizeDeps processing to be completed
+ * 打包 depsInfo 需要预构建的包，期间生成缓存文件
+ * esbuild 第二次打包
  */
 export function runOptimizeDeps(
   resolvedConfig: ResolvedConfig,
@@ -474,6 +482,7 @@ export function runOptimizeDeps(
   // Create a temporal directory so we don't need to delete optimized deps
   // until they have been processed. This also avoids leaving the deps cache
   // directory in a corrupted state if there is an error
+  // 创建一个临时的 cache 文件夹，避免出现错误
   fs.mkdirSync(processingCacheDir, { recursive: true })
 
   // a hint for Node.js
@@ -493,7 +502,8 @@ export function runOptimizeDeps(
   // We prebundle dependencies with esbuild and cache them, but there is no need
   // to wait here. Code that needs to access the cached deps needs to await
   // the optimizedDepInfo.processing promise for each dep
-
+  // TODO!!! 先启动服务，等请求打到的时候，如果 optimizedDepInfo.processing 存在 promise 的话就需要等待。这应该也是造成白屏的一些原因
+  // 看起来是等服务打过来之后再 commit successfulResult commit function
   const qualifiedIds = Object.keys(depsInfo)
   let cleaned = false
   let committed = false
@@ -612,6 +622,7 @@ export function runOptimizeDeps(
           )
 
           const { exportsData, ...info } = depsInfo[id]
+          // 添加到
           addOptimizedDepInfo(metadata, 'optimized', {
             ...info,
             // We only need to hash the output.imports in to check for stability, but adding the hash
@@ -646,6 +657,8 @@ export function runOptimizeDeps(
                 (depInfo) => depInfo.file === file,
               )
             ) {
+              // esbuild 产物中有 chunk 的文件，chunk 文件应该是「依赖的依赖」
+              // @time
               addOptimizedDepInfo(metadata, 'chunks', {
                 id,
                 file,
@@ -687,10 +700,14 @@ export function runOptimizeDeps(
       await context?.cancel()
       cleanUp()
     },
-    result: runResult,
+    result: runResult, // 就是开始 rebuild
   }
 }
 
+/**
+ * 根据 depInfo 即预构建包，return esbuild.context 创建的构建上下文
+ * 其中 esbuild 设置 bundle:true 使得所有依赖都内联到文件中，减少 http 请求次数
+ */
 async function prepareEsbuildOptimizerRun(
   resolvedConfig: ResolvedConfig,
   depsInfo: Record<string, OptimizedDepInfo>,
@@ -708,11 +725,11 @@ async function prepareEsbuildOptimizerRun(
   }
 
   // esbuild generates nested directory output with lowest common ancestor base
-  // this is unpredictable and makes it difficult to analyze entry / output
+  // this is unpredictable 不可预测的 and makes it difficult to analyze entry / output
   // mapping. So what we do here is:
-  // 1. flatten all ids to eliminate slash
+  // 1. flatten all ids to eliminate slash 消除斜杆
   // 2. in the plugin, read the entry ourselves as virtual files to retain the
-  //    path.
+  //    path. 作为虚拟文件以保持 path
   const flatIdDeps: Record<string, string> = {}
   const idToExports: Record<string, ExportsData> = {}
   const flatIdToExports: Record<string, ExportsData> = {}
@@ -758,7 +775,7 @@ async function prepareEsbuildOptimizerRun(
     ssr && config.ssr?.target !== 'webworker' ? 'node' : 'browser'
 
   const external = [...(optimizeDeps?.exclude ?? [])]
-
+  // 看样子 build 也会走到这，也会被 esbuild 处理
   if (isBuild) {
     let rollupOptionsExternal = config?.build?.rollupOptions?.external
     if (rollupOptionsExternal) {
@@ -783,14 +800,15 @@ async function prepareEsbuildOptimizerRun(
   if (external.length) {
     plugins.push(esbuildCjsExternalPlugin(external, platform))
   }
+  //
   plugins.push(esbuildDepPlugin(flatIdDeps, external, config, ssr))
   // plugins :[{name: 'vite:dep-pre-bundle', setup: ƒ}]
   // !!! 调用 esbuild 对 三方包进行打包，会将例如 vue 打包到 /node_modules/.deps/vue.js
   const context = await esbuild.context({
     absWorkingDir: process.cwd(),
     entryPoints: Object.keys(flatIdDeps), // [vue]
-    bundle: true, // true 时 esbuild 不会打包 vue import 的东西到项目中，而只会将 vue import 的内容打包到 vue 中
-    // 即将 loadsh-es 打包在一起而非 600 多个单独模块
+    bundle: true, // true 时，会将依赖的依赖变为字符串内联到文件中
+    // 即 600 多个 lodash 变成一个单独的模块也是由于此原因
     // We can't use platform 'neutral', as esbuild has custom handling
     // when the platform is 'node' or 'browser' that can't be emulated
     // by using mainFields and conditions
@@ -798,10 +816,11 @@ async function prepareEsbuildOptimizerRun(
     define,
     format: 'esm', // iief cjs esm
     // See https://github.com/evanw/esbuild/issues/1921#issuecomment-1152991694
+    // 文件头部位置
     banner:
       platform === 'node'
         ? {
-            js: `import { createRequire } from 'module';const require = createRequire(import.meta.url);`,
+            js: `import { createRequire } from 'module';const require = createRequire(import.meta.url);`, // TODO!!! 这里应该是和 cjs->esm 相关
           }
         : undefined,
     target: isBuild ? config.build.target || undefined : ESBUILD_MODULES_TARGET,
@@ -844,7 +863,10 @@ export async function addManuallyIncludedOptimizeDeps(
   filter?: (id: string) => boolean,
 ): Promise<void> {
   const { logger } = config
-  const optimizeDeps = getDepOptimizationConfig(config, ssr) // { disabled:false,include:['react','react/jsx-dev-runtime']} --> 是被 vite-plugin-react 中的 Config 添加的
+  // optimizeDeps = { disabled:false,include:['react','react/jsx-dev-runtime']} --> 是被 vite-plugin-react 中的 Config 添加的
+  // { disabled : false } 表明允许在 build 环境下使用 esbuild 进行依赖优化，即将 cjs -> esm 。而不是使用 @rollupjs/plugin-commonjs 这个包了
+  // 目前 V4 应该是默认允许了
+  const optimizeDeps = getDepOptimizationConfig(config, ssr)
   const optimizeDepsInclude = optimizeDeps?.include ?? []
   if (optimizeDepsInclude.length || extra.length) {
     const unableToOptimize = (id: string, msg: string) => {

@@ -45,7 +45,7 @@ const externalTypes = [
   'tsx',
   ...KNOWN_ASSET_TYPES,
 ]
-
+// 这个插件似乎是对 cjs -> esm 预处理的插件
 export function esbuildDepPlugin(
   qualified: Record<string, string>,
   external: string[],
@@ -174,6 +174,7 @@ export function esbuildDepPlugin(
           const modulePath = `"${convertedExternalPrefix}${args.path}"`
           return {
             contents:
+              // ??? 这里也是防止被 esbuild 擦除吗？
               isCSSRequest(args.path) && !isModuleCSSRequest(args.path)
                 ? `import ${modulePath};`
                 : `export { default } from ${modulePath};` +

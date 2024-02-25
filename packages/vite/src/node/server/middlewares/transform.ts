@@ -190,7 +190,7 @@ export function transformMiddleware(
         ) {
           url = injectQuery(url, 'direct')
         }
-        // TODO ifNoneMatch 是怎么生成的
+        // etag 是根据文件内容生成的
         // check if we can return 304 early
         const ifNoneMatch = req.headers['if-none-match'] // 'W/"6033-5V70usK56D0t2b1A7hJX7C8SBBg"'
         // 存在缓存 -->
@@ -205,6 +205,7 @@ export function transformMiddleware(
         }
 
         // resolve, load and transform using the plugin container
+        // 转换文件内容
         const result = await transformRequest(url, server, {
           html: req.headers.accept?.includes('text/html'),
         })

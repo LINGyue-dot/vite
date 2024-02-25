@@ -125,7 +125,8 @@ export class ModuleGraph {
   }
 
   onFileChange(file: string): void {
-    const mods = this.getModulesByFile(file) // TODO 为什么一个 App.vue 会有两个 mod ->  '/Users/chenshunze/Desktop/source-code/vite/playground/main-process/src/App.vue' 与 '/Users/chenshunze/Desktop/source-code/vite/playground/main-process/src/App.vue?vue&type=style&index=0&scoped=7a7a37b1&lang.css'
+    const mods = this.getModulesByFile(file) // TODO 为什么一个 App.vue 会有两个 mod ->  因为一个文件可能对应多个模块，根据 import 引入的不同
+    // '/Users/chenshunze/Desktop/source-code/vite/playground/main-process/src/App.vue' 与 '/Users/chenshunze/Desktop/source-code/vite/playground/main-process/src/App.vue?vue&type=style&index=0&scoped=7a7a37b1&lang.css'
     if (mods) {
       const seen = new Set<ModuleNode>()
       mods.forEach((mod) => {
@@ -184,6 +185,7 @@ export class ModuleGraph {
    * Update the module graph based on a module's updated imports information
    * If there are dependencies that no longer have any importers, they are
    * returned as a Set.
+   * hmr 相关更新 ModuleNode
    */
   async updateModuleInfo(
     mod: ModuleNode,
@@ -280,7 +282,7 @@ export class ModuleGraph {
   }
 
   /**
-   * @internal
+   * @internal 创建 rawUrl 对应的 ModuleNode -> 即内存缓存
    */
   async _ensureEntryFromUrl(
     rawUrl: string, // url 上的路径即相对路径

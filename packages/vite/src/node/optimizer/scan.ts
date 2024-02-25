@@ -111,7 +111,6 @@ export function scanImports(config: ResolvedConfig): {
           // @source esbuild 构建
           .rebuild()
           .then(() => {
-            // @time -->
             return {
               // Ensure a fixed order so hashes are stable and improve logs
               deps: orderedDependencies(deps),
@@ -201,7 +200,8 @@ async function computeEntries(config: ResolvedConfig) {
 
   return entries
 }
-// 初始化 esbuild 插件，同时利用 esbuild.context 创建构建上下文
+// 初始化 esbuild 插件，同时利用 esbuild.context 创建构建上下文。
+// esbuild 第一次预构建
 async function prepareEsbuildScanner(
   config: ResolvedConfig,
   entries: string[],
@@ -269,13 +269,14 @@ const langRE = /\blang\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/i
 const contextRE = /\bcontext\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s'">]+))/i
 
 /**
+ * esbuild 第一次预构建
  * 构建 esbuild 插件，插件内部借助 vite:resolve 来获取绝对地址，同时深度遍历来 external 所有的模块
  * esbuild 插件 onResolve 负责解析 import from 'xxx' ，onLoad 是在 esbuild 解析模块之前调用，用于处理并返回模块内容并告诉 esbuild 用哪个 loader 进行解析等
  * 整个预构建扫描过程如下：
  * 1. 入口 index.html 经过 onResolve 函数，通过 vite plugins vite:resolve 获取绝对地址并传递给 onLoad
  * 2. 传递到 onLoad ，对 script 标签进行处理（添加 export default {} 等）
  * 3. 此时 main.ts 会被 esbuild 解析
- * 4. main.ts 中的 import from 'react' 会被 onResolve 函数进行处理，同理调用 vite:resolve 转换为绝对地址 ，但此时发现 optimize.includes 里面有这个包，所以会 return { external:true } 后续就不会被传入 onLoad 函数继续深度遍历
+ * 4. main.ts 中的 import from 'react' 会被 onResolve 函数进行处理，同理调用 vite:resolve 转换为绝对地址 ，但此时发现 optimize.includes 里面有这个包，所以会 return { external:true } 后续就不会被传入 onLoad 函数继续深度遍历。同时会存储到 depImports 中
  */
 function esbuildScanPlugin(
   config: ResolvedConfig,
@@ -334,7 +335,7 @@ function esbuildScanPlugin(
     } else {
       transpiledContents = contents
     }
-  // TODO!!! 这里是做了什么？看起来似乎是做了转换为绝对路径
+    // TODO!!! 这里是做了什么？看起来似乎是做了转换为绝对路径
     const result = await transformGlobImport(
       transpiledContents,
       id,
@@ -358,7 +359,7 @@ function esbuildScanPlugin(
       build.onResolve({ filter: externalRE }, ({ path }) => ({
         path,
         external: true,
-      // 每个未标记为 external:true 的唯一路径/命名空间的文件都会触发 onLoad hook
+        // 每个未标记为 external:true 的唯一路径/命名空间的文件都会触发 onLoad hook
       }))
 
       // data urls
@@ -560,7 +561,7 @@ function esbuildScanPlugin(
             if (shouldExternalizeDep(resolved, id)) {
               return externalUnlessEntry({ path: id })
             }
-            // 三方需预构建模块
+            // 三方需预构建模块，只要在 node_modules 中的也可以
             if (isInNodeModules(resolved) || include?.includes(id)) {
               // dependency or forced included, externalize and stop crawling
               if (isOptimizable(resolved, config.optimizeDeps)) {

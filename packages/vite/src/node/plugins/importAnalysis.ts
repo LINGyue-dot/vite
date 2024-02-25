@@ -68,9 +68,8 @@ const debug = createDebugger('vite:import-analysis')
 const clientDir = normalizePath(CLIENT_DIR)
 
 const skipRE = /\.(?:map|json)(?:$|\?)/
-export const canSkipImportAnalysis = (
-  id: string,
-): boolean => skipRE.test(id) || isDirectCSSRequest(id) // .map .json 或 .css 文件就 true
+export const canSkipImportAnalysis = (id: string): boolean =>
+  skipRE.test(id) || isDirectCSSRequest(id) // .map .json 或 .css 文件就 true
 
 const optimizedDepChunkRE = /\/chunk-[A-Z\d]{8}\.js/
 const optimizedDepDynamicRE = /-[A-Z\d]{8}\.js/
@@ -169,6 +168,11 @@ function extractImportedBindings(
  *     ```js
  *     import './style.css.js'
  *     ```
+ *
+ * vite:import-analysis 插件，用 es-module-lexer 词法分析，将所有的 import 都分析出来
+ * 并调用 pluginContainer.resolve 即所有的 vite plugin resolve 获取绝对地址
+ * 1. 修改原文件中的 import from url 中的 url 为绝对地址
+ * 2. 并提前调用 transformRequest 提前进行解析该模块的信息
  */
 export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
   const { root, base } = config
@@ -314,6 +318,8 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
           }
         }
         // 这个 this.reolve 调用的是 pluginContainer.ts#305 中的 resolve 函数
+        // resolve 是转换为真实的绝对路径，transform 是转义内容如 ts -> js
+        // 这里之所以再调用 resolve 应该是为了提前 transformRequest 提前进行转换数据
         const resolved = await this.resolve(url, importerFile)
 
         if (!resolved) {
@@ -737,8 +743,9 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
           } ${prettyImporter}`,
         )
         // inject hot context
-        // 目前看来 main.ts 是没有的
+        // @source 添加 hmr 代码
         str().prepend(
+          // clientPublicPath -> @vite/client
           `import { createHotContext as __vite__createHotContext } from "${clientPublicPath}";` +
             `import.meta.hot = __vite__createHotContext(${JSON.stringify(
               normalizeHmrUrl(importerModule.url),

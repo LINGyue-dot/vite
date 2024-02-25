@@ -2,10 +2,10 @@ import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
+import { name } from './temp/index.ts'
 
 function App() {
-  const [count, setCount] = useState(0)
-  console.log('-=-=-')
+  const [count, setCount] = useState(name)
   return (
     <>
       <div>
